@@ -373,8 +373,8 @@ class MediaMentionIngestionService
 
         return $feedCandidates
             ->merge($sitemapCandidates)
-            ->filter(function (array $candidate) use ($since): bool {
-                if (! $this->looksLikeArticleUrl($candidate['url'])) {
+            ->filter(function (array $candidate) use ($source, $since): bool {
+                if (! $this->looksLikeArticleUrl($candidate['url'], $source)) {
                     return false;
                 }
 
@@ -971,7 +971,7 @@ class MediaMentionIngestionService
         return $limit ? Str::limit($value, $limit, '...') : $value;
     }
 
-    private function looksLikeArticleUrl(string $url): bool
+    private function looksLikeArticleUrl(string $url, array $source = []): bool
     {
         $parts = parse_url($url);
         $path = $parts['path'] ?? '';
@@ -992,6 +992,12 @@ class MediaMentionIngestionService
             '/topic/',
         ] as $excludedPath) {
             if (str_contains($path, $excludedPath)) {
+                return false;
+            }
+        }
+
+        foreach (($source['exclude_url_patterns'] ?? []) as $pattern) {
+            if (@preg_match($pattern, $url) === 1) {
                 return false;
             }
         }

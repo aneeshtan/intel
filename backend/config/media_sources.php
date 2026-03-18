@@ -21,6 +21,7 @@ return [
             'key' => 'trade-winds',
             'name' => 'Trade Winds',
             'homepage' => 'https://www.tradewindsnews.com/',
+            'access' => 'premium',
         ],
         [
             'key' => 'splash247',
@@ -36,11 +37,16 @@ return [
             'key' => 'shipping-watch',
             'name' => 'Shipping Watch',
             'homepage' => 'https://shippingwatch.com/',
+            'access' => 'premium',
         ],
         [
             'key' => 'seatrade-maritime',
             'name' => 'Seatrade Maritime',
             'homepage' => 'https://www.seatrade-maritime.com/',
+            'exclude_url_patterns' => [
+                '#/recent-(webinars|podcasts|documents|videos|publications|industry-events)(?:/|$)#i',
+                '#/latest-news/?$#i',
+            ],
         ],
         [
             'key' => 'hellenic-shipping-news',
@@ -56,6 +62,7 @@ return [
             'key' => 'joc',
             'name' => 'JOC',
             'homepage' => 'https://www.joc.com/',
+            'access' => 'premium',
         ],
         [
             'key' => 'the-maritime-standard',
@@ -96,6 +103,7 @@ return [
             'key' => 'dvz',
             'name' => 'DVZ',
             'homepage' => 'https://www.dvz.de/',
+            'access' => 'premium',
         ],
         [
             'key' => 'supply-chain-dive',
@@ -106,6 +114,7 @@ return [
             'key' => 'world-cargo-news',
             'name' => 'World Cargo News',
             'homepage' => 'https://www.worldcargonews.com/',
+            'access' => 'premium',
         ],
         [
             'key' => 'cargo-talk',
@@ -191,6 +200,7 @@ return [
             'key' => 'lloyds-list',
             'name' => 'Lloyd\'s List',
             'homepage' => 'https://lloydslist.com/',
+            'access' => 'premium',
         ],
         [
             'key' => 'safety4sea',

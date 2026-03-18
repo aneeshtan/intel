@@ -56,6 +56,62 @@ class MediaDiscoveryTest extends TestCase
         });
     }
 
+    public function test_media_discovery_ignores_source_urls_marked_as_non_article_pages(): void
+    {
+        Bus::fake();
+
+        config()->set('media_sources.sources', [
+            [
+                'key' => 'seatrade-maritime',
+                'name' => 'Seatrade Maritime',
+                'homepage' => 'https://www.seatrade-maritime.com/',
+                'feed_url' => 'https://feeds.example.test/rss.xml',
+                'exclude_url_patterns' => [
+                    '#/recent-(webinars|podcasts|documents|videos|publications|industry-events)(?:/|$)#i',
+                ],
+            ],
+        ]);
+
+        Http::fake([
+            'https://feeds.example.test/rss.xml' => Http::response(
+                <<<'XML'
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0">
+                  <channel>
+                    <title>Seatrade Maritime</title>
+                    <item>
+                      <title>Recent webinars | page 1 of 1 | Seatrade Maritime News</title>
+                      <link>https://www.seatrade-maritime.com/recent-webinars</link>
+                      <description>Section index page.</description>
+                      <pubDate>Wed, 18 Mar 2026 13:00:21 GMT</pubDate>
+                    </item>
+                    <item>
+                      <title>Container port congestion eases after initial Iran shock</title>
+                      <link>https://www.seatrade-maritime.com/containers/container-port-congestion-eases-after-initial-iran-shock</link>
+                      <description>Real article page.</description>
+                      <pubDate>Wed, 18 Mar 2026 09:00:00 GMT</pubDate>
+                    </item>
+                  </channel>
+                </rss>
+                XML,
+                200,
+                ['Content-Type' => 'application/rss+xml']
+            ),
+        ]);
+
+        $this->artisan('media:discover --days=7')
+            ->expectsOutputToContain('Media discovery queued 1 article fetch job(s).')
+            ->assertSuccessful();
+
+        Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
+            return ($job->candidate['url'] ?? null) === 'https://www.seatrade-maritime.com/containers/container-port-congestion-eases-after-initial-iran-shock';
+        });
+
+        Bus::assertNotDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
+            return ($job->candidate['url'] ?? null) === 'https://www.seatrade-maritime.com/recent-webinars';
+        });
+    }
+
     public function test_fetch_media_article_job_stores_article_and_creates_mentions(): void
     {
         $this->seedBase();
