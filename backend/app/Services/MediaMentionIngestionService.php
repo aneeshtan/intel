@@ -388,7 +388,7 @@ class MediaMentionIngestionService
         }
 
         $previous = libxml_use_internal_errors(true);
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
@@ -762,12 +762,14 @@ class MediaMentionIngestionService
         }
     }
 
-    private function cleanText(string $value): string
+    private function cleanText(string $value, ?int $limit = 8000): string
     {
         $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
 
-        return Str::limit(trim($value), 1200, '...');
+        $value = trim($value);
+
+        return $limit ? Str::limit($value, $limit, '...') : $value;
     }
 
     private function looksLikeArticleUrl(string $url): bool
@@ -835,6 +837,7 @@ class MediaMentionIngestionService
 
                 if ($upper === 'NOT') {
                     $mode = 'not';
+
                     continue;
                 }
 
@@ -847,6 +850,7 @@ class MediaMentionIngestionService
                 if ($mode === 'not') {
                     $mustNotMatch[] = mb_strtolower($token);
                     $mode = 'must';
+
                     continue;
                 }
 

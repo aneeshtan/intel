@@ -185,5 +185,110 @@ return [
             'name' => 'Offshore Energy',
             'homepage' => 'https://www.offshore-energy.biz/',
         ],
+        [
+            'key' => 'lloyds-list',
+            'name' => 'Lloyd\'s List',
+            'homepage' => 'https://lloydslist.com/',
+        ],
+        [
+            'key' => 'safety4sea',
+            'name' => 'SAFETY4SEA',
+            'homepage' => 'https://safety4sea.com/',
+        ],
+        [
+            'key' => 'ship-technology',
+            'name' => 'Ship Technology',
+            'homepage' => 'https://www.ship-technology.com/news/',
+        ],
+        [
+            'key' => 'seatrade-cruise',
+            'name' => 'Seatrade Cruise',
+            'homepage' => 'https://www.seatrade-cruise.com/',
+        ],
+        [
+            'key' => 'portnews',
+            'name' => 'PortNews',
+            'homepage' => 'https://en.portnews.ru/',
+        ],
+        [
+            'key' => 'imo-media-centre',
+            'name' => 'IMO Media Centre',
+            'homepage' => 'https://www.imo.org/en/MediaCentre/Pages/Default.aspx',
+        ],
+        [
+            'key' => 'bimco-news',
+            'name' => 'BIMCO News',
+            'homepage' => 'https://www.bimco.org/news',
+        ],
+        [
+            'key' => 'iaph-news',
+            'name' => 'IAPH World Ports',
+            'homepage' => 'https://www.iaphworldports.org/news/',
+        ],
+        [
+            'key' => 'unctad-maritime-transport',
+            'name' => 'UNCTAD Review of Maritime Transport',
+            'homepage' => 'https://unctad.org/topic/transport-and-trade-logistics/review-of-maritime-transport',
+        ],
+        [
+            'key' => 'dnv-maritime-news',
+            'name' => 'DNV Maritime News',
+            'homepage' => 'https://www.dnv.com/news/',
+        ],
+        [
+            'key' => 'maersk-news',
+            'name' => 'Maersk News',
+            'homepage' => 'https://www.maersk.com/news',
+        ],
+        [
+            'key' => 'msc-press',
+            'name' => 'MSC Press Releases',
+            'homepage' => 'https://www.msc.com/en/media-centre/press-releases',
+        ],
+        [
+            'key' => 'cma-cgm-news',
+            'name' => 'CMA CGM News',
+            'homepage' => 'https://www.cma-cgm.com/news',
+        ],
+        [
+            'key' => 'hapag-lloyd-press',
+            'name' => 'Hapag-Lloyd Press',
+            'homepage' => 'https://www.hapag-lloyd.com/en/company/press/releases.html',
+        ],
+        [
+            'key' => 'one-press-room',
+            'name' => 'ONE Press Room',
+            'homepage' => 'https://www.one-line.com/en/press-room',
+        ],
+        [
+            'key' => 'dp-world-news',
+            'name' => 'DP World News',
+            'homepage' => 'https://www.dpworld.com/news/releases',
+        ],
+        [
+            'key' => 'ad-ports-news',
+            'name' => 'AD Ports Group News',
+            'homepage' => 'https://www.adportsgroup.com/news-and-media',
+        ],
+        [
+            'key' => 'apm-terminals-news',
+            'name' => 'APM Terminals News',
+            'homepage' => 'https://www.apmterminals.com/en/news',
+        ],
+        [
+            'key' => 'port-of-rotterdam-news',
+            'name' => 'Port of Rotterdam News',
+            'homepage' => 'https://www.portofrotterdam.com/en/news-and-press-releases',
+        ],
+        [
+            'key' => 'mpa-singapore-media',
+            'name' => 'MPA Singapore Media Centre',
+            'homepage' => 'https://www.mpa.gov.sg/media-centre',
+        ],
+        [
+            'key' => 'port-houston-news',
+            'name' => 'Port Houston News',
+            'homepage' => 'https://porthouston.com/news/',
+        ],
     ],
 ];

@@ -29,6 +29,8 @@ type WorkspaceTab =
   | "results"
   | "analysis"
   | "sources"
+  | "articles"
+  | "profile"
   | "keywords"
   | "projects"
   | "new-project"
@@ -157,6 +159,29 @@ type MediaCoverage = {
   }[];
 };
 
+type CapturedArticle = {
+  id: number;
+  source_key: string;
+  source_name: string;
+  source_url: string | null;
+  url: string | null;
+  author_name: string | null;
+  title: string;
+  body: string;
+  published_at: string | null;
+};
+
+type AdminCapturedArticles = {
+  items: CapturedArticle[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+  query: string | null;
+};
+
 type AuthResponse = {
   token: string;
   user: {
@@ -276,6 +301,12 @@ function buildLinePath(values: number[], width: number, height: number) {
     .join(" ");
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -295,19 +326,33 @@ async function apiRequest<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`/backend${path}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`/backend${path}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new Error(
+      "The backend is unavailable. Start the Laravel API server or verify the BACKEND_URL setting.",
+    );
+  }
 
   const text = await response.text();
+  const contentType = response.headers.get("content-type") ?? "";
   let payload: Record<string, unknown> = {};
+  const isJsonResponse = contentType.includes("application/json");
 
   if (text) {
-    try {
-      payload = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      throw new Error("The backend did not return valid JSON.");
+    if (isJsonResponse) {
+      try {
+        payload = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        throw new Error("The backend returned invalid JSON.");
+      }
+    } else if (response.ok) {
+      throw new Error("The backend returned an unexpected response format.");
     }
   }
 
@@ -316,10 +361,18 @@ async function apiRequest<T>(
     const validationMessage = validationErrors
       ? Object.values(validationErrors).flat()[0]
       : undefined;
+    const plainTextMessage =
+      !isJsonResponse && text && !text.trim().startsWith("<") ? text.trim() : undefined;
+    const proxyFailureMessage =
+      !isJsonResponse && [500, 502, 503, 504].includes(response.status)
+        ? "The backend is unavailable. Start the Laravel API server or verify the BACKEND_URL setting."
+        : undefined;
 
     throw new Error(
       validationMessage ??
         (payload.message as string | undefined) ??
+        proxyFailureMessage ??
+        plainTextMessage ??
         "The request could not be completed.",
     );
   }
@@ -640,6 +693,7 @@ export function IqxIntelligenceApp() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null);
   const [mediaCoverage, setMediaCoverage] = useState<MediaCoverage | null>(null);
+  const [capturedArticles, setCapturedArticles] = useState<AdminCapturedArticles | null>(null);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("results");
   const [bootError, setBootError] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
@@ -657,6 +711,12 @@ export function IqxIntelligenceApp() {
     description: "",
     audience: "",
   });
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    passwordConfirmation: "",
+  });
   const [projectEditorForm, setProjectEditorForm] = useState({
     name: "",
     description: "",
@@ -665,6 +725,8 @@ export function IqxIntelligenceApp() {
   });
   const [mentionsQuery, setMentionsQuery] = useState("");
   const [mentionsPage, setMentionsPage] = useState(1);
+  const [adminArticlesQuery, setAdminArticlesQuery] = useState("");
+  const [adminArticlesPage, setAdminArticlesPage] = useState(1);
   const [keywordForm, setKeywordForm] = useState({
     keyword: "",
     platform: "all",
@@ -679,6 +741,7 @@ export function IqxIntelligenceApp() {
     setSelectedProjectId(null);
     setSelectedProject(null);
     setMediaCoverage(null);
+    setCapturedArticles(null);
     setActiveWorkspaceTab("results");
   };
 
@@ -713,6 +776,61 @@ export function IqxIntelligenceApp() {
     setMediaCoverage(response.data);
   };
 
+  const loadCapturedArticles = async (
+    authToken: string,
+    page = 1,
+    query = "",
+  ) => {
+    const params = new URLSearchParams({
+      page: `${page}`,
+      per_page: "20",
+    });
+
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+
+    const response = await apiRequest<{ data: AdminCapturedArticles }>(
+      `/admin/media-articles?${params.toString()}`,
+      {},
+      authToken,
+    );
+
+    setCapturedArticles(response.data);
+  };
+
+  const refreshAdminArchive = async (
+    authToken: string,
+    page = 1,
+    query = "",
+  ) => {
+    const params = new URLSearchParams({
+      page: `${page}`,
+      per_page: "20",
+    });
+
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+
+    const [coverageResponse, articlesResponse] = await Promise.all([
+      apiRequest<{ data: MediaCoverage }>("/admin/media-coverage", {}, authToken),
+      apiRequest<{ data: AdminCapturedArticles }>(
+        `/admin/media-articles?${params.toString()}`,
+        {},
+        authToken,
+      ),
+    ]);
+
+    setMediaCoverage(coverageResponse.data);
+    setCapturedArticles(articlesResponse.data);
+
+    return {
+      coverage: coverageResponse.data,
+      articles: articlesResponse.data,
+    };
+  };
+
   const hydrateSession = async (authToken: string, preferredProjectId?: number | null) => {
     const [meResponse, projectsResponse] = await Promise.all([
       apiRequest<{ data: Profile }>("/me", {}, authToken),
@@ -736,9 +854,13 @@ export function IqxIntelligenceApp() {
     }
 
     if (meResponse.data.roles.includes("admin")) {
-      await loadMediaCoverage(authToken);
+      await Promise.all([
+        loadMediaCoverage(authToken),
+        loadCapturedArticles(authToken, 1, ""),
+      ]);
     } else {
       setMediaCoverage(null);
+      setCapturedArticles(null);
     }
   };
 
@@ -772,6 +894,15 @@ export function IqxIntelligenceApp() {
   }, []);
 
   useEffect(() => {
+    setProfileForm({
+      name: profile?.name ?? "",
+      email: profile?.email ?? "",
+      password: "",
+      passwordConfirmation: "",
+    });
+  }, [profile]);
+
+  useEffect(() => {
     setProjectEditorForm({
       name: selectedProject?.name ?? "",
       description: selectedProject?.description ?? "",
@@ -783,6 +914,18 @@ export function IqxIntelligenceApp() {
   useEffect(() => {
     setMentionsPage(1);
   }, [mentionsQuery, selectedProjectId]);
+
+  useEffect(() => {
+    setAdminArticlesPage(1);
+  }, [adminArticlesQuery]);
+
+  useEffect(() => {
+    if (!token || !profile?.roles.includes("admin") || activeWorkspaceTab !== "articles") {
+      return;
+    }
+
+    void loadCapturedArticles(token, adminArticlesPage, adminArticlesQuery);
+  }, [activeWorkspaceTab, adminArticlesPage, adminArticlesQuery, profile, token]);
 
   const handleAuthSubmit = () => {
     startTransition(async () => {
@@ -841,6 +984,46 @@ export function IqxIntelligenceApp() {
       } finally {
         clearSession();
         setFlashMessage("You have been signed out.");
+      }
+    });
+  };
+
+  const handleProfileSave = () => {
+    if (!token || !profile) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await apiRequest<{ data: Profile }>(
+          "/me",
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              name: profileForm.name.trim(),
+              email: profileForm.email.trim(),
+              ...(profileForm.password.trim()
+                ? {
+                    password: profileForm.password,
+                    password_confirmation: profileForm.passwordConfirmation,
+                  }
+                : {}),
+            }),
+          },
+          token,
+        );
+
+        setProfile(response.data);
+        setProfileForm({
+          name: response.data.name,
+          email: response.data.email,
+          password: "",
+          passwordConfirmation: "",
+        });
+        setFlashMessage("Profile details updated.");
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Profile update failed.");
       }
     });
   };
@@ -1180,6 +1363,8 @@ export function IqxIntelligenceApp() {
 
     startTransition(async () => {
       try {
+        const baselineArticleCount = mediaCoverage?.summary.archive_articles ?? 0;
+        const baselineLatestArticleId = capturedArticles?.items[0]?.id ?? null;
         const response = await apiRequest<{
           data: { projects_processed: number; capture_started: boolean };
           message: string;
@@ -1197,7 +1382,39 @@ export function IqxIntelligenceApp() {
         );
 
         await hydrateSession(token, selectedProjectId);
-        setFlashMessage(response.message);
+
+        if (profile?.roles.includes("admin")) {
+          let archiveUpdated = false;
+
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            await wait(5000);
+
+            const { coverage, articles } = await refreshAdminArchive(
+              token,
+              activeWorkspaceTab === "articles" ? adminArticlesPage : 1,
+              activeWorkspaceTab === "articles" ? adminArticlesQuery : "",
+            );
+
+            const latestArticleId = articles.items[0]?.id ?? null;
+
+            if (
+              coverage.summary.archive_articles > baselineArticleCount ||
+              latestArticleId !== baselineLatestArticleId
+            ) {
+              archiveUpdated = true;
+              break;
+            }
+          }
+
+          setFlashMessage(
+            archiveUpdated
+              ? "Archive refresh completed. New captured articles are now available."
+              : response.message,
+          );
+        } else {
+          setFlashMessage(response.message);
+        }
+
         setBootError(null);
       } catch (error) {
         setBootError(
@@ -1297,6 +1514,14 @@ export function IqxIntelligenceApp() {
   const indexedSources = mediaCoverage?.summary.indexed_sources ?? 0;
   const archiveArticles = mediaCoverage?.summary.archive_articles ?? 0;
   const coverageSources = mediaCoverage?.sources.slice(0, 6) ?? [];
+  const allCapturedArticleItems = capturedArticles?.items ?? [];
+  const allCapturedArticleMeta = capturedArticles?.meta ?? {
+    current_page: 1,
+    last_page: 1,
+    per_page: 20,
+    total: 0,
+  };
+  const latestCapturedArticle = allCapturedArticleItems[0] ?? null;
   const sourceBreakdown = buildSourceBreakdown(mentions);
   const sentimentBreakdown = buildSentimentBreakdown(mentions);
   const channelCoverage = buildChannelCoverage(
@@ -1307,10 +1532,17 @@ export function IqxIntelligenceApp() {
   const overviewCards = buildOverviewCards(mentions);
   const analyticsMetrics = buildAnalyticsMetrics(mentions);
   const dashboardCards = buildDashboardCards(currentProject, trackedKeywords.length);
+  const isProfileDirty =
+    profileForm.name.trim() !== (profile?.name ?? "") ||
+    profileForm.email.trim() !== (profile?.email ?? "") ||
+    profileForm.password.trim() !== "" ||
+    profileForm.passwordConfirmation.trim() !== "";
   const workspaceTabs: { key: WorkspaceTab; label: string }[] = [
     { key: "results", label: "Mentions" },
     { key: "analysis", label: "Analytics" },
     { key: "sources", label: "Influencers & Sources" },
+    ...(isAdmin ? [{ key: "articles" as WorkspaceTab, label: "All Captured Articles" }] : []),
+    { key: "profile", label: "Profile" },
     { key: "keywords", label: "Keywords" },
     { key: "projects", label: "Projects" },
   ];
@@ -1339,6 +1571,18 @@ export function IqxIntelligenceApp() {
       title: "Source visibility",
       description:
         "See where matched mentions are coming from and, for admins, inspect archive coverage without cluttering the main mention workflow.",
+    },
+    articles: {
+      eyebrow: "Active view",
+      title: "Captured article archive",
+      description:
+        "Browse the full captured news archive across all monitored sources, independent of project-level keyword matches.",
+    },
+    profile: {
+      eyebrow: "Active view",
+      title: "Profile & membership",
+      description:
+        "Review your current access, update account details, and move into plan management without leaving the workspace.",
     },
     keywords: {
       eyebrow: "Active view",
@@ -1734,118 +1978,224 @@ export function IqxIntelligenceApp() {
                   )}
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {isAdmin ? (
-                    <button
-                      type="button"
-                      onClick={handleAdminCaptureMentions}
-                      disabled={isPending || !selectedProjectId}
-                      className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Refresh archive
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab("projects")}
-                    disabled={!selectedProjectId}
-                    className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Edit project
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab("new-project")}
-                    className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5"
-                  >
-                    New project
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab("plans")}
-                    className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
-                  >
-                    Subscription plans
-                  </button>
-                </div>
               </article>
             </section>
 
             <section className="grid gap-5">
               <article className="rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,243,239,0.92))] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                      {currentTabCopy.eyebrow}
-                    </p>
-                    <h3 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]">
-                      {currentTabCopy.title}
-                    </h3>
-                    <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
-                      {currentTabCopy.description}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
-                      {currentProject?.name ?? "No project selected"}
-                    </span>
-                    <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
-                      {trackedKeywords.length} keywords
-                    </span>
-                    <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
-                      {currentProject?.mentions_count ?? 0} mentions
-                    </span>
-                    {isAdmin && mediaCoverage ? (
-                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
-                        {archiveArticles} archived articles
-                      </span>
-                    ) : null}
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        onClick={handleAdminCaptureMentions}
-                        disabled={isPending || !selectedProjectId}
-                        className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Refresh archive
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {workspaceTabs.map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setActiveWorkspaceTab(tab.key)}
-                      className={`rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
-                        activeWorkspaceTab === tab.key
-                          ? "bg-stone-950 text-stone-50"
-                          : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {overviewCards.map((card) => (
-                    <article
-                      key={card.label}
-                      className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4"
-                    >
-                      <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                        {card.label}
+                {activeWorkspaceTab === "articles" ? (
+                  <>
+                    <div>
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        {currentTabCopy.eyebrow}
                       </p>
-                      <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
-                        {card.value}
-                      </strong>
-                      <p className="mt-2 text-sm leading-5 text-stone-500">{card.note}</p>
-                    </article>
-                  ))}
-                </div>
+                      <h3 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]">
+                        {currentTabCopy.title}
+                      </h3>
+                      <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
+                        {currentTabCopy.description}
+                      </p>
+                    </div>
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-2">
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Captured articles
+                        </p>
+                        <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
+                          {allCapturedArticleMeta.total}
+                        </strong>
+                        <p className="mt-2 text-sm leading-6 text-stone-500">
+                          Total archived articles available to the admin archive view.
+                        </p>
+                      </article>
+
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Latest article
+                        </p>
+                        <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                          {latestCapturedArticle?.title ?? "No archived article yet"}
+                        </strong>
+                        <p className="mt-2 text-sm leading-6 text-stone-500">
+                          {latestCapturedArticle
+                            ? `${latestCapturedArticle.source_name} · ${formatPublishedAt(latestCapturedArticle.published_at)}`
+                            : "The most recent captured article will appear here once the archive is populated."}
+                        </p>
+                      </article>
+                    </div>
+                  </>
+                ) : activeWorkspaceTab === "profile" ? (
+                  <>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                          {currentTabCopy.eyebrow}
+                        </p>
+                        <h3 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]">
+                          {currentTabCopy.title}
+                        </h3>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
+                          {currentTabCopy.description}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {profile.email}
+                        </span>
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {profile.plan?.name ?? "No Plan"}
+                        </span>
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {profile.roles.join(", ")}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      {workspaceTabs.map((tab) => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setActiveWorkspaceTab(tab.key)}
+                          className={`rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
+                            activeWorkspaceTab === tab.key
+                              ? "bg-stone-950 text-stone-50"
+                              : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Current plan
+                        </p>
+                        <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
+                          {profile.plan?.name ?? "No Plan"}
+                        </strong>
+                        <p className="mt-2 text-sm leading-5 text-stone-500">
+                          {isAdmin ? "Admin access bypasses commercial limits." : "Membership access currently applied to this workspace."}
+                        </p>
+                      </article>
+
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Projects used
+                        </p>
+                        <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
+                          {profile.counts.projects}
+                        </strong>
+                        <p className="mt-2 text-sm leading-5 text-stone-500">
+                          Limit: {profile.plan?.projects_limit ?? "Flexible"}
+                        </p>
+                      </article>
+
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Keywords used
+                        </p>
+                        <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
+                          {profile.counts.keywords}
+                        </strong>
+                        <p className="mt-2 text-sm leading-5 text-stone-500">
+                          Limit: {profile.plan?.keywords_limit ?? "Flexible"}
+                        </p>
+                      </article>
+
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Retention
+                        </p>
+                        <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
+                          {profile.plan?.mentions_retention_days ?? 0}d
+                        </strong>
+                        <p className="mt-2 text-sm leading-5 text-stone-500">
+                          Mention retention window attached to the current plan.
+                        </p>
+                      </article>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                          {currentTabCopy.eyebrow}
+                        </p>
+                        <h3 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]">
+                          {currentTabCopy.title}
+                        </h3>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
+                          {currentTabCopy.description}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {currentProject?.name ?? "No project selected"}
+                        </span>
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {trackedKeywords.length} keywords
+                        </span>
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {currentProject?.mentions_count ?? 0} mentions
+                        </span>
+                        {isAdmin && mediaCoverage ? (
+                          <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                            {archiveArticles} archived articles
+                          </span>
+                        ) : null}
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={handleAdminCaptureMentions}
+                            disabled={isPending || !selectedProjectId}
+                            className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Refresh archive
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      {workspaceTabs.map((tab) => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setActiveWorkspaceTab(tab.key)}
+                          className={`rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
+                            activeWorkspaceTab === tab.key
+                              ? "bg-stone-950 text-stone-50"
+                              : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {overviewCards.map((card) => (
+                        <article
+                          key={card.label}
+                          className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4"
+                        >
+                          <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                            {card.label}
+                          </p>
+                          <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
+                            {card.value}
+                          </strong>
+                          <p className="mt-2 text-sm leading-5 text-stone-500">{card.note}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                )}
               </article>
 
               {activeWorkspaceTab === "results" ? (
@@ -2420,6 +2770,141 @@ export function IqxIntelligenceApp() {
                 </article>
               ) : null}
 
+              {activeWorkspaceTab === "articles" ? (
+                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Admin archive
+                      </p>
+                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+                        All captured maritime articles
+                      </h3>
+                    </div>
+                    <span className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold text-stone-500">
+                      {allCapturedArticleMeta.total} archived articles
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <label className="text-sm font-medium text-stone-700">
+                      Search captured articles
+                      <input
+                        value={adminArticlesQuery}
+                        onChange={(event) => setAdminArticlesQuery(event.target.value)}
+                        className={inputClassName}
+                        placeholder="Search titles, body text, source, author, or URL"
+                      />
+                    </label>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => token && void loadCapturedArticles(token, 1, adminArticlesQuery)}
+                        disabled={isPending}
+                        className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Refresh list
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-4">
+                    {allCapturedArticleItems.length ? (
+                      allCapturedArticleItems.map((article) => (
+                        <article
+                          key={article.id}
+                          className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  {article.source_name}
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  {formatPublishedAt(article.published_at)}
+                                </span>
+                              </div>
+                              <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                {article.title}
+                              </h4>
+                            </div>
+                            {article.url ? (
+                              <a
+                                href={article.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                              >
+                                Visit article
+                              </a>
+                            ) : null}
+                          </div>
+
+                          <p className="mt-3 text-sm leading-6 text-stone-600">
+                            {article.body}
+                          </p>
+
+                          <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
+                            <span className="rounded-full bg-white px-3 py-1">
+                              Source key: {article.source_key}
+                            </span>
+                            {article.author_name ? (
+                              <span className="rounded-full bg-white px-3 py-1">
+                                Author: {article.author_name}
+                              </span>
+                            ) : null}
+                            {article.source_url ? (
+                              <span className="rounded-full bg-white px-3 py-1">
+                                Home: {article.source_url}
+                              </span>
+                            ) : null}
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500">
+                        No captured articles match the current archive search.
+                      </article>
+                    )}
+                  </div>
+
+                  {allCapturedArticleMeta.last_page > 1 ? (
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm text-stone-500">
+                        Page {allCapturedArticleMeta.current_page} of {allCapturedArticleMeta.last_page}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAdminArticlesPage((current) => Math.max(1, current - 1))
+                          }
+                          disabled={allCapturedArticleMeta.current_page <= 1}
+                          className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAdminArticlesPage((current) =>
+                              Math.min(allCapturedArticleMeta.last_page, current + 1),
+                            )
+                          }
+                          disabled={
+                            allCapturedArticleMeta.current_page >= allCapturedArticleMeta.last_page
+                          }
+                          className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
+
               {activeWorkspaceTab === "keywords" ? (
                 <article
                   id="keywords"
@@ -2787,6 +3272,204 @@ export function IqxIntelligenceApp() {
                         Cancel
                       </button>
                     </div>
+                  </div>
+                </article>
+              ) : null}
+
+              {activeWorkspaceTab === "profile" ? (
+                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                    <section className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Account details
+                      </p>
+                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                        Edit your profile
+                      </h3>
+                      <p className="mt-3 text-sm leading-6 text-stone-500">
+                        Update the contact details used for this workspace. Leave the password fields blank if you do not want to change them.
+                      </p>
+
+                      <div className="mt-5 grid gap-4 md:grid-cols-2">
+                        <label className="text-sm font-medium text-stone-700">
+                          Full name
+                          <input
+                            className={inputClassName}
+                            value={profileForm.name}
+                            onChange={(event) =>
+                              setProfileForm((current) => ({
+                                ...current,
+                                name: event.target.value,
+                              }))
+                            }
+                            placeholder="Harbor Ops"
+                          />
+                        </label>
+
+                        <label className="text-sm font-medium text-stone-700">
+                          Email
+                          <input
+                            className={inputClassName}
+                            type="email"
+                            value={profileForm.email}
+                            onChange={(event) =>
+                              setProfileForm((current) => ({
+                                ...current,
+                                email: event.target.value,
+                              }))
+                            }
+                            placeholder="name@company.com"
+                          />
+                        </label>
+
+                        <label className="text-sm font-medium text-stone-700">
+                          New password
+                          <input
+                            className={inputClassName}
+                            type="password"
+                            value={profileForm.password}
+                            onChange={(event) =>
+                              setProfileForm((current) => ({
+                                ...current,
+                                password: event.target.value,
+                              }))
+                            }
+                            placeholder="Leave blank to keep current password"
+                          />
+                        </label>
+
+                        <label className="text-sm font-medium text-stone-700">
+                          Confirm new password
+                          <input
+                            className={inputClassName}
+                            type="password"
+                            value={profileForm.passwordConfirmation}
+                            onChange={(event) =>
+                              setProfileForm((current) => ({
+                                ...current,
+                                passwordConfirmation: event.target.value,
+                              }))
+                            }
+                            placeholder="Repeat new password"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleProfileSave}
+                          disabled={
+                            isPending ||
+                            !profileForm.name.trim() ||
+                            !profileForm.email.trim() ||
+                            !isProfileDirty ||
+                            profileForm.password !== profileForm.passwordConfirmation
+                          }
+                          className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Save profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setProfileForm({
+                              name: profile.name,
+                              email: profile.email,
+                              password: "",
+                              passwordConfirmation: "",
+                            })
+                          }
+                          className="rounded-full border border-stone-300 px-6 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                        >
+                          Reset
+                        </button>
+                        {profileForm.password !== profileForm.passwordConfirmation ? (
+                          <p className="text-sm text-rose-600">
+                            Password confirmation must match.
+                          </p>
+                        ) : null}
+                      </div>
+                    </section>
+
+                    <section className="grid gap-5">
+                      <article className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                              Membership
+                            </p>
+                            <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                              Current access
+                            </h3>
+                          </div>
+                          <span className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50">
+                            {profile.plan?.name ?? "No Plan"}
+                          </span>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 md:grid-cols-2">
+                          <article className="rounded-[1.2rem] border border-stone-200 bg-white p-4">
+                            <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                              Projects
+                            </p>
+                            <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em] text-stone-950">
+                              {profile.counts.projects}
+                            </strong>
+                            <p className="mt-2 text-sm text-stone-500">
+                              Limit: {profile.plan?.projects_limit ?? "Flexible"}
+                            </p>
+                          </article>
+
+                          <article className="rounded-[1.2rem] border border-stone-200 bg-white p-4">
+                            <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                              Keywords
+                            </p>
+                            <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em] text-stone-950">
+                              {profile.counts.keywords}
+                            </strong>
+                            <p className="mt-2 text-sm text-stone-500">
+                              Limit: {profile.plan?.keywords_limit ?? "Flexible"}
+                            </p>
+                          </article>
+                        </div>
+
+                        <div className="mt-5 rounded-[1.2rem] border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-500">
+                          <p>
+                            Retention: {profile.plan?.mentions_retention_days ?? 0} days
+                          </p>
+                          <p className="mt-1">
+                            Roles: {profile.roles.join(", ")}
+                          </p>
+                        </div>
+
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          {!isAdmin ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setActiveWorkspaceTab("plans")}
+                                className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800"
+                              >
+                                Compare plans
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleOpenPortal}
+                                disabled={isPending}
+                                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Open billing portal
+                              </button>
+                            </>
+                          ) : (
+                            <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-3 text-sm text-stone-500">
+                              Admin access is managed outside the subscription workflow.
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    </section>
                   </div>
                 </article>
               ) : null}

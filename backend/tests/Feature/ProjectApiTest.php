@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\MediaArticle;
 use App\Models\Mention;
 use App\Models\User;
 use Database\Seeders\ConnectRelationshipsSeeder;
@@ -315,6 +316,55 @@ class ProjectApiTest extends TestCase
         ]);
     }
 
+    public function test_media_ingest_matches_keywords_that_appear_late_in_a_long_article_body(): void
+    {
+        $this->fakeMediaFeedsWithLateKeyword();
+
+        $this->seed([
+            PermissionsTableSeeder::class,
+            RolesTableSeeder::class,
+            ConnectRelationshipsSeeder::class,
+            PlanSeeder::class,
+        ]);
+
+        $user = User::factory()->create();
+        $role = config('roles.models.role')::query()->where('slug', 'user')->first();
+        $user->attachRole($role);
+
+        $project = $user->projects()->create([
+            'name' => 'Carrier Watch',
+            'slug' => 'carrier-watch',
+            'status' => 'active',
+            'monitored_platforms' => ['media'],
+        ]);
+
+        $keyword = $project->trackedKeywords()->create([
+            'keyword' => 'SeaLead',
+            'platform' => 'media',
+            'match_type' => 'phrase',
+            'is_active' => true,
+        ]);
+
+        $this->artisan("media:ingest --project={$project->id} --force --days=90")
+            ->expectsOutputToContain("Project {$project->id} {$project->name}: 1 mentions imported.")
+            ->assertSuccessful();
+
+        $article = MediaArticle::query()
+            ->where('source_key', 'test-maritime-feed')
+            ->where('title', 'Carrier pricing softens despite disruption fears')
+            ->first();
+
+        $this->assertNotNull($article);
+        $this->assertStringContainsString('SeaLead', $article->body);
+
+        $this->assertDatabaseHas('mentions', [
+            'project_id' => $project->id,
+            'tracked_keyword_id' => $keyword->id,
+            'source' => 'media',
+            'title' => 'Carrier pricing softens despite disruption fears',
+        ]);
+    }
+
     private function fakeMediaFeeds(): void
     {
         config()->set('media_sources.sources', [
@@ -384,6 +434,61 @@ class ProjectApiTest extends TestCase
                       <h1>Suez Canal disruption drives vessel rerouting</h1>
                       <p>Operators are reacting to the latest Suez Canal disruption and rerouting plans.</p>
                       <p>Shippers continue to review schedules as services divert around the disruption.</p>
+                    </article>
+                  </body>
+                </html>
+                HTML,
+                200,
+                ['Content-Type' => 'text/html']
+            ),
+        ]);
+    }
+
+    private function fakeMediaFeedsWithLateKeyword(): void
+    {
+        $leadingParagraph = str_repeat('Freight markets remained steady across major lanes. ', 80);
+
+        config()->set('media_sources.sources', [
+            [
+                'key' => 'test-maritime-feed',
+                'name' => 'Test Maritime Feed',
+                'homepage' => 'https://feeds.example.test/',
+                'feed_url' => 'https://feeds.example.test/rss.xml',
+            ],
+        ]);
+
+        Http::fake([
+            'https://feeds.example.test/rss.xml' => Http::response(
+                <<<'XML'
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0">
+                  <channel>
+                    <title>Test Maritime Feed</title>
+                    <item>
+                      <title>Carrier pricing softens despite disruption fears</title>
+                      <link>https://feeds.example.test/articles/carrier-pricing-softens</link>
+                      <description>Container rates remain under pressure.</description>
+                      <pubDate>Mon, 17 Mar 2026 09:00:00 GMT</pubDate>
+                      <guid>test-carrier-pricing-softens</guid>
+                    </item>
+                  </channel>
+                </rss>
+                XML,
+                200,
+                ['Content-Type' => 'application/rss+xml']
+            ),
+            'https://feeds.example.test/articles/carrier-pricing-softens' => Http::response(
+                <<<HTML
+                <html>
+                  <head>
+                    <title>Carrier pricing softens despite disruption fears</title>
+                    <meta property="article:published_time" content="2026-03-17T09:00:00Z" />
+                  </head>
+                  <body>
+                    <article>
+                      <h1>Carrier pricing softens despite disruption fears</h1>
+                      <p>{$leadingParagraph}</p>
+                      <p>SeaLead withdrew its last ship from the route after this month&apos;s sailing.</p>
                     </article>
                   </body>
                 </html>
