@@ -5,7 +5,7 @@ IQX Intelligence is a maritime social and media monitoring product concept with 
 ## Product direction
 
 - Core focus: maritime audience monitoring across LinkedIn, Reddit, and media search.
-- Product style: Brand24-like monitoring workflows with a more restrained executive interface.
+- Product style: modern monitoring workflows with a restrained executive interface.
 - Primary use cases: keyword tracking, competitor monitoring, narrative shift detection, risk alerts, and executive briefings.
 
 ## Run locally
