@@ -37,6 +37,8 @@ type WorkspaceTab =
   | "new-project"
   | "plans";
 
+type AnalysisWindowDays = 14 | 30 | 90;
+
 type Plan = {
   id: number;
   name: string;
@@ -284,6 +286,12 @@ const mentionSentimentOptions = [
   { value: "negative", label: "Negative" },
 ] as const;
 
+const analysisWindowOptions: { value: AnalysisWindowDays; label: string }[] = [
+  { value: 14, label: "14 days" },
+  { value: 30, label: "30 days" },
+  { value: 90, label: "90 days" },
+];
+
 function formatPrice(priceCents: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -330,6 +338,36 @@ function mentionSentimentSelection(mention: Mention) {
   return mention.metadata?.sentiment_source === "manual" ? mention.sentiment : "auto";
 }
 
+function formatAnalysisWindow(days: AnalysisWindowDays) {
+  return `Last ${days} days`;
+}
+
+function sourceCategoryLabel(mention: Mention) {
+  const source = (mention.metadata?.source_name ?? mention.source).toLowerCase();
+
+  if (source.includes("linkedin")) {
+    return "LinkedIn";
+  }
+
+  if (source.includes("reddit")) {
+    return "Reddit";
+  }
+
+  if (source.includes("x") || source.includes("twitter")) {
+    return "X";
+  }
+
+  if (source.includes("facebook")) {
+    return "Facebook";
+  }
+
+  if (source.includes("tiktok")) {
+    return "TikTok";
+  }
+
+  return "News";
+}
+
 function estimateMentionReach(mention: Mention) {
   const source = (mention.metadata?.source_name ?? mention.source).toLowerCase();
   const base =
@@ -351,11 +389,42 @@ function estimateMentionReach(mention: Mention) {
   return Math.round(base * sentimentMultiplier + Math.min(mention.body.length * 12, 8000));
 }
 
-function buildMentionReachSeries(mentions: Mention[]) {
+function estimateMentionFollowers(mention: Mention) {
+  const category = sourceCategoryLabel(mention);
+  const reach = estimateMentionReach(mention);
+  const score = Number(mention.metadata?.score ?? 0);
+  const comments = Number(mention.metadata?.num_comments ?? 0);
+  const ratio =
+    category === "News"
+      ? 0.62
+      : category === "X"
+        ? 0.55
+        : category === "TikTok"
+          ? 0.5
+          : category === "LinkedIn"
+            ? 0.48
+            : 0.44;
+
+  return Math.max(500, Math.round(reach * ratio + score * 42 + comments * 24));
+}
+
+function filterMentionsByWindow(mentions: Mention[], days: AnalysisWindowDays) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+
+  return mentions.filter((mention) => {
+    if (!mention.published_at) {
+      return true;
+    }
+
+    return new Date(mention.published_at).getTime() >= cutoff;
+  });
+}
+
+function buildMentionReachSeries(mentions: Mention[], days = 14) {
   const today = new Date();
-  const points = Array.from({ length: 14 }, (_, index) => {
+  const points = Array.from({ length: days }, (_, index) => {
     const date = new Date(today);
-    date.setDate(today.getDate() - (13 - index));
+    date.setDate(today.getDate() - (days - 1 - index));
 
     const key = date.toISOString().slice(0, 10);
 
@@ -386,6 +455,156 @@ function buildMentionReachSeries(mentions: Mention[]) {
   }
 
   return points;
+}
+
+function buildCategoryBreakdown(mentions: Mention[]) {
+  const order = ["News", "Reddit", "X", "LinkedIn", "Facebook", "TikTok"];
+  const colors: Record<string, string> = {
+    News: "#0f172a",
+    Reddit: "#f97316",
+    X: "#2563eb",
+    LinkedIn: "#0a66c2",
+    Facebook: "#1877f2",
+    TikTok: "#111827",
+  };
+  const counts = mentions.reduce<Map<string, number>>((summary, mention) => {
+    const category = sourceCategoryLabel(mention);
+    summary.set(category, (summary.get(category) ?? 0) + 1);
+
+    return summary;
+  }, new Map());
+  const total = mentions.length || 1;
+
+  return order
+    .map((label) => ({
+      label,
+      count: counts.get(label) ?? 0,
+      share: Math.round(((counts.get(label) ?? 0) / total) * 100),
+      color: colors[label],
+    }))
+    .filter((item) => item.count > 0);
+}
+
+function buildSentimentByCategory(mentions: Mention[]) {
+  return buildCategoryBreakdown(mentions).map((category) => {
+    const categoryMentions = mentions.filter((mention) => sourceCategoryLabel(mention) === category.label);
+    const positive = categoryMentions.filter((mention) => mention.sentiment === "positive").length;
+    const neutral = categoryMentions.filter((mention) => mention.sentiment === "neutral").length;
+    const negative = categoryMentions.filter((mention) => mention.sentiment === "negative").length;
+
+    return {
+      category: category.label,
+      total: categoryMentions.length,
+      positive,
+      neutral,
+      negative,
+    };
+  });
+}
+
+function buildShareOfVoice(mentions: Mention[], keywords: TrackedKeyword[]) {
+  const total = mentions.length || 1;
+
+  return keywords
+    .map((keyword) => {
+      const count = mentions.filter((mention) => mention.tracked_keyword?.id === keyword.id).length;
+
+      return {
+        id: keyword.id,
+        label: keyword.keyword,
+        count,
+        share: Math.round((count / total) * 100),
+      };
+    })
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 6);
+}
+
+function dominantSentiment(mentions: Mention[]) {
+  const counts = {
+    positive: mentions.filter((mention) => mention.sentiment === "positive").length,
+    neutral: mentions.filter((mention) => mention.sentiment === "neutral").length,
+    negative: mentions.filter((mention) => mention.sentiment === "negative").length,
+  };
+
+  return (Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0] ??
+    "neutral") as "positive" | "neutral" | "negative";
+}
+
+function buildTopMentions(mentions: Mention[]) {
+  return [...mentions]
+    .sort((left, right) => {
+      const leftScore =
+        estimateMentionReach(left) +
+        estimateMentionFollowers(left) +
+        Number(left.metadata?.score ?? 0) * 55 +
+        Number(left.metadata?.num_comments ?? 0) * 22;
+      const rightScore =
+        estimateMentionReach(right) +
+        estimateMentionFollowers(right) +
+        Number(right.metadata?.score ?? 0) * 55 +
+        Number(right.metadata?.num_comments ?? 0) * 22;
+
+      return rightScore - leftScore;
+    })
+    .slice(0, 5);
+}
+
+function buildTopProfiles(mentions: Mention[]) {
+  return Array.from(
+    mentions
+      .filter((mention) => isSocialMention(mention) && mention.author_name?.trim())
+      .reduce<Map<string, Mention[]>>((summary, mention) => {
+        const key = mention.author_name?.trim() ?? "";
+        const current = summary.get(key) ?? [];
+        current.push(mention);
+        summary.set(key, current);
+
+        return summary;
+      }, new Map()),
+  )
+    .map(([author, authorMentions]) => {
+      const topMention = [...authorMentions].sort(
+        (left, right) => estimateMentionReach(right) - estimateMentionReach(left),
+      )[0];
+
+      return {
+        author,
+        source: topMention?.metadata?.source_name ?? topMention?.source ?? "Social",
+        followers: Math.max(...authorMentions.map((mention) => estimateMentionFollowers(mention))),
+        reach: authorMentions.reduce((sum, mention) => sum + estimateMentionReach(mention), 0),
+        mentionsCount: authorMentions.length,
+        latestPublishedAt: [...authorMentions]
+          .map((mention) => mention.published_at)
+          .filter(Boolean)
+          .sort()
+          .at(-1) ?? null,
+        topMention,
+        sentiment: dominantSentiment(authorMentions),
+      };
+    })
+    .sort((left, right) => right.reach - left.reach);
+}
+
+function buildDonutGradient(items: { count: number; color: string }[]) {
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+
+  if (!total) {
+    return "conic-gradient(#e7e5e4 0deg 360deg)";
+  }
+
+  let current = 0;
+
+  return `conic-gradient(${items
+    .map((item) => {
+      const start = (current / total) * 360;
+      current += item.count;
+      const end = (current / total) * 360;
+
+      return `${item.color} ${start}deg ${end}deg`;
+    })
+    .join(", ")})`;
 }
 
 function buildLinePath(values: number[], width: number, height: number, scaleMax?: number) {
@@ -539,6 +758,70 @@ function ResultToneBadge({ tone }: { tone: string }) {
   );
 }
 
+function DonutBreakdownCard({
+  eyebrow,
+  title,
+  items,
+  totalLabel,
+}: {
+  eyebrow: string;
+  title: string;
+  items: { label: string; count: number; share: number; color: string }[];
+  totalLabel: string;
+}) {
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+
+  return (
+    <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
+      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">{eyebrow}</p>
+      <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">{title}</h4>
+
+      <div className="mt-5 flex flex-col gap-5 md:flex-row md:items-center">
+        <div className="mx-auto flex h-44 w-44 items-center justify-center rounded-full bg-white shadow-inner">
+          <div
+            className="flex h-36 w-36 items-center justify-center rounded-full"
+            style={{
+              background: buildDonutGradient(items),
+            }}
+          >
+            <div className="flex h-20 w-20 flex-col items-center justify-center rounded-full bg-white text-center">
+              <strong className="text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                {total}
+              </strong>
+              <span className="text-[11px] font-medium text-stone-500">{totalLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-3">
+          {items.length ? (
+            items.map((item) => (
+              <div key={item.label} className="rounded-[1.1rem] border border-white/70 bg-white/90 p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <strong className="text-sm font-semibold text-stone-900">{item.label}</strong>
+                  </div>
+                  <span className="text-sm text-stone-500">
+                    {item.count} • {item.share}%
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-[1.1rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+              No breakdown is available for this date range yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function buildOverviewCards(mentions: Mention[]) {
   const totalReach = mentions.reduce((sum, mention) => sum + estimateMentionReach(mention), 0);
   const positiveMentions = mentions.filter((mention) => mention.sentiment === "positive").length;
@@ -599,19 +882,6 @@ function buildSentimentBreakdown(mentions: Mention[]) {
     tone,
     count: mentions.filter((mention) => mention.sentiment === tone).length,
   }));
-}
-
-function buildSourceBreakdown(mentions: Mention[]) {
-  return Array.from(
-    mentions.reduce<Map<string, number>>((summary, mention) => {
-      const source = mention.metadata?.source_name ?? mention.source;
-      summary.set(source, (summary.get(source) ?? 0) + 1);
-
-      return summary;
-    }, new Map()),
-  )
-    .map(([source, count]) => ({ source, count }))
-    .sort((left, right) => right.count - left.count);
 }
 
 function buildChannelCoverage(sourceLabels: string[]) {
@@ -717,8 +987,16 @@ function buildAnalyticsMetrics(mentions: Mention[]) {
   ];
 }
 
-function MentionReachChart({ mentions }: { mentions: Mention[] }) {
-  const series = buildMentionReachSeries(mentions);
+function MentionReachChart({
+  mentions,
+  windowDays = 14,
+  label = "Last 14 days",
+}: {
+  mentions: Mention[];
+  windowDays?: number;
+  label?: string;
+}) {
+  const series = buildMentionReachSeries(mentions, windowDays);
   const mentionValues = series.map((point) => point.mentions);
   const reachValues = series.map((point) => point.reach);
   const width = 760;
@@ -735,6 +1013,8 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
   const reachSteps = buildAxisSteps(maxReach);
   const mentionScaleMax = Math.max(...mentionSteps, 1);
   const reachScaleMax = Math.max(...reachSteps, 1);
+  const xLabelFrequency = windowDays <= 14 ? 1 : windowDays <= 30 ? 3 : 7;
+  const showPointLabels = windowDays <= 30;
   const xForIndex = (index: number) =>
     series.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + (index / (series.length - 1)) * plotWidth;
   const yForMentions = (value: number) => plotTop + plotHeight - (value / mentionScaleMax) * plotHeight;
@@ -769,7 +1049,7 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
             Sentiment
           </span>
         </div>
-        <p className="text-sm text-stone-500">Last 14 days</p>
+        <p className="text-sm text-stone-500">{label}</p>
       </div>
 
       <div className="mt-5 overflow-hidden rounded-[1.25rem] border border-stone-200 bg-white p-4">
@@ -823,26 +1103,31 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
 
           {series.map((point, index) => {
             const x = xForIndex(index);
+            const shouldShowLabel = index % xLabelFrequency === 0 || index === series.length - 1;
 
             return (
               <g key={point.key}>
-                <line
-                  x1={x}
-                  y1={plotTop}
-                  x2={x}
-                  y2={plotTop + plotHeight}
-                  stroke="rgba(245,245,244,0.9)"
-                  strokeWidth="1"
-                />
-                <text
-                  x={x}
-                  y={height - 8}
-                  textAnchor="middle"
-                  fontSize="11"
-                  fill="#78716c"
-                >
-                  {point.label}
-                </text>
+                {shouldShowLabel ? (
+                  <>
+                    <line
+                      x1={x}
+                      y1={plotTop}
+                      x2={x}
+                      y2={plotTop + plotHeight}
+                      stroke="rgba(245,245,244,0.9)"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={x}
+                      y={height - 8}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fill="#78716c"
+                    >
+                      {point.label}
+                    </text>
+                  </>
+                ) : null}
               </g>
             );
           })}
@@ -871,7 +1156,7 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
             return (
               <g key={`mention-point-${point.key}`}>
                 <circle cx={x} cy={y} r="4.5" fill="#2563eb" />
-                {point.mentions > 0 ? (
+                {showPointLabels && point.mentions > 0 ? (
                   <text
                     x={x}
                     y={Math.max(plotTop + 12, y - 10)}
@@ -893,7 +1178,7 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
             return (
               <g key={`reach-point-${point.key}`}>
                 <circle cx={x} cy={y} r="4.5" fill="#15803d" />
-                {point.reach > 0 ? (
+                {showPointLabels && point.reach > 0 ? (
                   <text
                     x={x}
                     y={Math.max(plotTop + 12, y - 10)}
@@ -988,6 +1273,7 @@ export function IqxIntelligenceApp() {
   });
   const [mentionsQuery, setMentionsQuery] = useState("");
   const [mentionsPage, setMentionsPage] = useState(1);
+  const [analysisWindowDays, setAnalysisWindowDays] = useState<AnalysisWindowDays>(14);
   const [updatingMentionId, setUpdatingMentionId] = useState<number | null>(null);
   const [adminArticlesQuery, setAdminArticlesQuery] = useState("");
   const [adminArticlesPage, setAdminArticlesPage] = useState(1);
@@ -2160,7 +2446,10 @@ export function IqxIntelligenceApp() {
     });
   };
 
-  const handleExportPdfReport = () => {
+  const handleExportPdfReport = (
+    reportMentions = filteredMentions,
+    reportLabel = "Latest monitoring snapshot for the selected project.",
+  ) => {
     if (typeof window === "undefined") {
       return;
     }
@@ -2172,7 +2461,7 @@ export function IqxIntelligenceApp() {
       return;
     }
 
-    const visibleMentions = filteredMentions.slice(0, 12)
+    const visibleMentions = reportMentions.slice(0, 12)
       .map((mention) => {
         const source = mention.metadata?.source_name ?? mention.source;
 
@@ -2203,6 +2492,9 @@ export function IqxIntelligenceApp() {
           <div class="muted">IQX Intelligence PDF Report</div>
           <h1 style="font-size: 38px; margin-top: 10px;">${currentProject?.name ?? "Monitoring report"}</h1>
           <p style="margin-top: 12px; font-size: 16px; color: #57534e;">
+            ${reportLabel}
+          </p>
+          <p style="margin-top: 12px; font-size: 16px; color: #57534e;">
             Generated on ${new Intl.DateTimeFormat("en-US", {
               month: "long",
               day: "numeric",
@@ -2212,8 +2504,8 @@ export function IqxIntelligenceApp() {
             }).format(new Date())}
           </p>
           <div class="grid">
-            <div class="card"><div class="muted">Mentions</div><div style="font-size:34px;font-weight:700;margin-top:8px;">${filteredMentions.length}</div></div>
-            <div class="card"><div class="muted">Estimated Reach</div><div style="font-size:34px;font-weight:700;margin-top:8px;">${formatCompactNumber(filteredMentions.reduce((sum, mention) => sum + estimateMentionReach(mention), 0))}</div></div>
+            <div class="card"><div class="muted">Mentions</div><div style="font-size:34px;font-weight:700;margin-top:8px;">${reportMentions.length}</div></div>
+            <div class="card"><div class="muted">Estimated Reach</div><div style="font-size:34px;font-weight:700;margin-top:8px;">${formatCompactNumber(reportMentions.reduce((sum, mention) => sum + estimateMentionReach(mention), 0))}</div></div>
             <div class="card"><div class="muted">Tracked Keywords</div><div style="font-size:34px;font-weight:700;margin-top:8px;">${trackedKeywords.length}</div></div>
           </div>
           <h2 style="font-size: 26px; margin: 24px 0 16px;">Recent Results</h2>
@@ -2230,6 +2522,7 @@ export function IqxIntelligenceApp() {
     selectedProject ?? projects.find((project) => project.id === selectedProjectId) ?? null;
   const trackedKeywords = selectedProject?.tracked_keywords ?? [];
   const mentions = selectedProject?.mentions ?? [];
+  const analysisMentions = filterMentionsByWindow(mentions, analysisWindowDays);
   const sourceGroups = selectedProject?.source_groups ?? [];
   const influencerGroups = selectedProject?.influencer_groups ?? [];
   const filteredMentions = mentions.filter((mention) => {
@@ -2258,16 +2551,33 @@ export function IqxIntelligenceApp() {
     total: 0,
   };
   const latestCapturedArticle = allCapturedArticleItems[0] ?? null;
-  const sourceBreakdown = buildSourceBreakdown(mentions);
-  const sentimentBreakdown = buildSentimentBreakdown(mentions);
   const channelCoverage = buildChannelCoverage(
     sourceGroups.length
       ? sourceGroups.map((group) => group.domain)
       : mentions.map((mention) => mention.metadata?.source_name ?? mention.source),
   );
   const overviewCards = buildOverviewCards(mentions);
-  const analyticsMetrics = buildAnalyticsMetrics(mentions);
+  const analyticsMetrics = buildAnalyticsMetrics(analysisMentions);
   const dashboardCards = buildDashboardCards(currentProject, trackedKeywords.length);
+  const analysisOverviewCards = analyticsMetrics.slice(0, 9);
+  const analysisCategoryBreakdown = buildCategoryBreakdown(analysisMentions);
+  const analysisSentimentBreakdown = buildSentimentBreakdown(analysisMentions).map((item) => ({
+    ...item,
+    share: analysisMentions.length ? Math.round((item.count / analysisMentions.length) * 100) : 0,
+    color:
+      item.tone === "positive"
+        ? "#10b981"
+        : item.tone === "negative"
+          ? "#f43f5e"
+          : "#78716c",
+  }));
+  const analysisSentimentByCategory = buildSentimentByCategory(analysisMentions);
+  const popularAnalysisMentions = buildTopMentions(analysisMentions);
+  const topPublicProfiles = buildTopProfiles(analysisMentions).slice(0, 5);
+  const shareOfVoice = buildShareOfVoice(analysisMentions, trackedKeywords);
+  const topFollowers = [...topPublicProfiles]
+    .sort((left, right) => right.followers - left.followers)
+    .slice(0, 5);
   const alertSourceOptions = [
     { value: "media", label: "Media" },
     { value: "reddit", label: "Reddit" },
@@ -3006,8 +3316,8 @@ export function IqxIntelligenceApp() {
                         </span>
                         <button
                           type="button"
-                          onClick={handleExportPdfReport}
-                            className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                          onClick={() => handleExportPdfReport()}
+                          className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
                         >
                           Export PDF
                         </button>
@@ -3102,7 +3412,7 @@ export function IqxIntelligenceApp() {
                               </button>
                               <button
                                 type="button"
-                                onClick={handleExportPdfReport}
+                                onClick={() => handleExportPdfReport()}
                                 className="w-full rounded-full border border-stone-300 px-4 py-2 text-center font-semibold text-stone-700 transition-colors hover:border-stone-500 hover:text-stone-950 sm:w-auto sm:rounded-none sm:border-0 sm:px-0 sm:py-0 sm:text-left"
                               >
                                 Add to PDF report
@@ -3823,7 +4133,7 @@ export function IqxIntelligenceApp() {
 
               {activeWorkspaceTab === "analysis" ? (
                 <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-                  <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+                  <div className="flex flex-col gap-4 border-b border-stone-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                         Performance snapshot
@@ -3831,137 +4141,331 @@ export function IqxIntelligenceApp() {
                       <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
                         Monitoring analysis for {currentProject?.name ?? "the selected project"}
                       </h3>
+                      <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
+                        Review the strongest mentions, top public profiles, category mix, sentiment,
+                        share of voice, and follower concentration across {formatAnalysisWindow(analysisWindowDays).toLowerCase()}.
+                      </p>
+                    </div>
 
-                      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {analyticsMetrics.map((card) => (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap gap-2 rounded-full border border-stone-200 bg-stone-50 p-1">
+                        {analysisWindowOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setAnalysisWindowDays(option.value)}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                              analysisWindowDays === option.value
+                                ? "bg-stone-950 text-stone-50"
+                                : "text-stone-600 hover:bg-white hover:text-stone-950"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleExportPdfReport(
+                            analysisMentions,
+                            `${formatAnalysisWindow(analysisWindowDays)} analysis export for ${currentProject?.name ?? "the selected project"}.`,
+                          )
+                        }
+                        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 hover:text-stone-950"
+                      >
+                        Export
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+                    <MentionReachChart
+                      mentions={analysisMentions}
+                      windowDays={analysisWindowDays}
+                      label={formatAnalysisWindow(analysisWindowDays)}
+                    />
+
+                    <article className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Overview
+                      </p>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {analysisOverviewCards.map((card) => (
                           <article
                             key={card.label}
-                            className="rounded-[1.2rem] border border-stone-200 bg-stone-50/90 p-4"
+                            className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
                           >
                             <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                               {card.label}
                             </p>
-                            <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em]">
+                            <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
                               {card.value}
                             </strong>
                           </article>
                         ))}
                       </div>
+                    </article>
+                  </div>
 
-                      <div className="mt-5 rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
-                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                          Keyword concentration
-                        </p>
-                        <div className="mt-4 space-y-3">
-                          {trackedKeywords.length ? (
-                            trackedKeywords.slice(0, 5).map((keyword, index) => (
-                              <div key={keyword.id}>
-                                <div className="flex items-center justify-between gap-4 text-sm">
-                                  <strong className="font-semibold text-stone-900">
-                                    {keyword.keyword}
-                                  </strong>
-                                  <span className="text-stone-500">
-                                    {Math.max(1, mentions.filter(
-                                      (mention) =>
-                                        mention.tracked_keyword?.id === keyword.id,
-                                    ).length)}
-                                    {" "}mentions
-                                  </span>
-                                </div>
-                                <div className="mt-2 h-2 rounded-full bg-stone-200">
-                                  <div
-                                    className="h-2 rounded-full bg-stone-950"
-                                    style={{
-                                      width: `${Math.min(22 + index * 14, 92)}%`,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-sm text-stone-500">
-                              Add keywords to start seeing concentration and trend analysis.
-                            </p>
-                          )}
+                  <div className="mt-5 grid gap-5 xl:grid-cols-3">
+                    <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5 xl:col-span-1">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                            Mentions
+                          </p>
+                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                            The most popular mentions
+                          </h4>
                         </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          {popularAnalysisMentions.length} shown
+                        </span>
                       </div>
-                    </div>
 
-                    <div className="grid gap-5">
-                      <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
-                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                          Tone mix
-                        </p>
-                        <div className="mt-4 space-y-3">
-                          {sentimentBreakdown.map((item) => (
-                            <div key={item.tone}>
-                              <div className="flex items-center justify-between gap-4 text-sm">
-                                <span className="font-semibold capitalize text-stone-900">
-                                  {item.tone}
-                                </span>
-                                <span className="text-stone-500">{item.count}</span>
+                      <div className="mt-4 space-y-3">
+                        {popularAnalysisMentions.length ? (
+                          popularAnalysisMentions.map((mention) => (
+                            <article
+                              key={mention.id}
+                              className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <strong className="text-base font-semibold text-stone-950">
+                                    {mention.title ?? "Untitled mention"}
+                                  </strong>
+                                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
+                                    <span>{mention.metadata?.source_name ?? mention.source}</span>
+                                    <span>•</span>
+                                    <span>{formatCompactNumber(estimateMentionReach(mention))} reach</span>
+                                    <span>•</span>
+                                    <span>{formatPublishedAt(mention.published_at)}</span>
+                                  </div>
+                                </div>
+                                <ResultToneBadge tone={mention.sentiment} />
                               </div>
-                              <div className="mt-2 h-2 rounded-full bg-stone-200">
+                              <p className="mt-3 text-sm leading-6 text-stone-600">
+                                {mention.body.length > 180 ? `${mention.body.slice(0, 177)}...` : mention.body}
+                              </p>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                            No popular mentions are available for this date range yet.
+                          </div>
+                        )}
+                      </div>
+                    </article>
+
+                    <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5 xl:col-span-1">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                            Public profiles
+                          </p>
+                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                            From top public profiles
+                          </h4>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                          Social only
+                        </span>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {topPublicProfiles.length ? (
+                          topPublicProfiles.map((profileItem) => (
+                            <article
+                              key={profileItem.author}
+                              className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <strong className="text-base font-semibold text-stone-950">
+                                    {profileItem.author}
+                                  </strong>
+                                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
+                                    <span>{profileItem.source}</span>
+                                    <span>•</span>
+                                    <span>{formatCompactNumber(profileItem.reach)} reach</span>
+                                    <span>•</span>
+                                    <span>{formatCompactNumber(profileItem.followers)} followers</span>
+                                  </div>
+                                </div>
+                                <ResultToneBadge tone={profileItem.sentiment} />
+                              </div>
+                              <p className="mt-3 text-sm leading-6 text-stone-600">
+                                {profileItem.topMention?.body.length && profileItem.topMention.body.length > 160
+                                  ? `${profileItem.topMention.body.slice(0, 157)}...`
+                                  : profileItem.topMention?.body ?? "Top post summary unavailable."}
+                              </p>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                            Top public profiles will appear once social mentions are available.
+                          </div>
+                        )}
+                      </div>
+                    </article>
+
+                    <div className="grid gap-5 xl:col-span-1">
+                      <DonutBreakdownCard
+                        eyebrow="Category mix"
+                        title="Mentions by categories"
+                        items={analysisCategoryBreakdown.map((item) => ({
+                          label: item.label,
+                          count: item.count,
+                          share: item.share,
+                          color: item.color,
+                        }))}
+                        totalLabel="mentions"
+                      />
+
+                      <DonutBreakdownCard
+                        eyebrow="Tone"
+                        title="Sentiment chart"
+                        items={analysisSentimentBreakdown.map((item) => ({
+                          label: item.tone.charAt(0).toUpperCase() + item.tone.slice(1),
+                          count: item.count,
+                          share: item.share,
+                          color: item.color,
+                        }))}
+                        totalLabel="mentions"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr_0.9fr]">
+                    <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Category tone
+                      </p>
+                      <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                        Sentiment by categories
+                      </h4>
+
+                      <div className="mt-4 space-y-4">
+                        {analysisSentimentByCategory.length ? (
+                          analysisSentimentByCategory.map((row) => (
+                            <div key={row.category}>
+                              <div className="flex items-center justify-between gap-4 text-sm">
+                                <strong className="font-semibold text-stone-900">{row.category}</strong>
+                                <span className="text-stone-500">{row.total} mentions</span>
+                              </div>
+                              <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-stone-200">
                                 <div
-                                  className={`h-2 rounded-full ${
-                                    item.tone === "positive"
-                                      ? "bg-emerald-500"
-                                      : item.tone === "negative"
-                                        ? "bg-rose-500"
-                                        : "bg-stone-500"
-                                  }`}
+                                  className="bg-emerald-500"
                                   style={{
-                                    width: `${mentions.length ? Math.max((item.count / mentions.length) * 100, item.count ? 8 : 0) : 0}%`,
+                                    width: `${row.total ? (row.positive / row.total) * 100 : 0}%`,
+                                  }}
+                                />
+                                <div
+                                  className="bg-stone-500"
+                                  style={{
+                                    width: `${row.total ? (row.neutral / row.total) * 100 : 0}%`,
+                                  }}
+                                />
+                                <div
+                                  className="bg-rose-500"
+                                  style={{
+                                    width: `${row.total ? (row.negative / row.total) * 100 : 0}%`,
                                   }}
                                 />
                               </div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
+                                <span className="rounded-full bg-white px-3 py-1">Positive {row.positive}</span>
+                                <span className="rounded-full bg-white px-3 py-1">Neutral {row.neutral}</span>
+                                <span className="rounded-full bg-white px-3 py-1">Negative {row.negative}</span>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </article>
-
-                      <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
-                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                          Executive readout
-                        </p>
-                        <div className="mt-4 space-y-3 text-sm leading-6 text-stone-600">
-                          <p>
-                            {mentions.length
-                              ? `IQX has matched ${mentions.length} recent mentions for ${currentProject?.name ?? "this project"}, with ${trackedKeywords.length} active keywords shaping the monitoring scope.`
-                              : "No customer-facing mentions are visible yet. The system is ready to surface matched results as soon as the archive or live capture finds relevant coverage."}
-                          </p>
-                          <p>
-                            {sourceBreakdown.length
-                              ? `${sourceBreakdown[0]?.source} is currently the strongest visible source in the mention stream.`
-                              : "Source diversity will appear here once the mention stream starts filling."}
-                          </p>
-                        </div>
-                      </article>
-
-                      <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                              Reports
-                            </p>
-                            <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-900">
-                              Export monitoring report
-                            </h4>
+                          ))
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                            Category sentiment will populate once mentions are captured in this period.
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleExportPdfReport}
-                            className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800"
-                          >
-                            Export PDF
-                          </button>
-                        </div>
-                        <p className="mt-3 text-sm leading-6 text-stone-500">
-                          Create a printable PDF summary with the latest mentions, estimated reach,
-                          and tracked keyword context.
-                        </p>
-                      </article>
-                    </div>
+                        )}
+                      </div>
+                    </article>
+
+                    <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Keyword mix
+                      </p>
+                      <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                        Most Share of Voice
+                      </h4>
+
+                      <div className="mt-4 space-y-3">
+                        {shareOfVoice.length ? (
+                          shareOfVoice.map((item) => (
+                            <div key={item.id} className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4">
+                              <div className="flex items-center justify-between gap-4">
+                                <strong className="text-sm font-semibold text-stone-900">{item.label}</strong>
+                                <span className="text-sm text-stone-500">{item.share}%</span>
+                              </div>
+                              <div className="mt-3 h-2 rounded-full bg-stone-200">
+                                <div
+                                  className="h-2 rounded-full bg-stone-950"
+                                  style={{ width: `${Math.max(item.share, 8)}%` }}
+                                />
+                              </div>
+                              <div className="mt-2 text-xs text-stone-500">{item.count} mentions</div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                            Share of voice appears once keywords start matching mentions.
+                          </div>
+                        )}
+                      </div>
+                    </article>
+
+                    <article className="rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Audience concentration
+                      </p>
+                      <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                        Most followers
+                      </h4>
+
+                      <div className="mt-4 space-y-3">
+                        {topFollowers.length ? (
+                          topFollowers.map((item) => (
+                            <article
+                              key={item.author}
+                              className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <strong className="text-base font-semibold text-stone-950">
+                                    {item.author}
+                                  </strong>
+                                  <p className="mt-1 text-sm text-stone-500">{item.source}</p>
+                                </div>
+                                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700">
+                                  {formatCompactNumber(item.followers)} followers
+                                </span>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+                                <span className="rounded-full bg-stone-100 px-3 py-1">
+                                  {item.mentionsCount} mentions
+                                </span>
+                                <span className="rounded-full bg-stone-100 px-3 py-1">
+                                  {formatCompactNumber(item.reach)} reach
+                                </span>
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                            Follower rankings appear once public-profile mentions are available.
+                          </div>
+                        )}
+                      </div>
+                    </article>
                   </div>
                 </article>
               ) : null}
