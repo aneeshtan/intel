@@ -301,6 +301,22 @@ function buildLinePath(values: number[], width: number, height: number) {
     .join(" ");
 }
 
+function buildAxisSteps(maxValue: number, steps = 4) {
+  if (maxValue <= 0) {
+    return Array.from({ length: steps + 1 }, (_, index) => index);
+  }
+
+  const roughStep = maxValue / steps;
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(roughStep, 1)));
+  const normalized = roughStep / magnitude;
+  const niceNormalizedStep =
+    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = niceNormalizedStep * magnitude;
+  const ceiling = Math.ceil(maxValue / step) * step;
+
+  return Array.from({ length: steps + 1 }, (_, index) => ceiling - step * index);
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -602,9 +618,39 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
   const mentionValues = series.map((point) => point.mentions);
   const reachValues = series.map((point) => point.reach);
   const width = 760;
-  const height = 220;
-  const mentionPath = buildLinePath(mentionValues, width, height);
-  const reachPath = buildLinePath(reachValues, width, height);
+  const height = 260;
+  const plotLeft = 52;
+  const plotRight = 56;
+  const plotTop = 18;
+  const plotBottom = 36;
+  const plotWidth = width - plotLeft - plotRight;
+  const plotHeight = height - plotTop - plotBottom;
+  const maxMentions = Math.max(...mentionValues, 1);
+  const maxReach = Math.max(...reachValues, 1);
+  const mentionSteps = buildAxisSteps(maxMentions);
+  const reachSteps = buildAxisSteps(maxReach);
+  const mentionScaleMax = Math.max(...mentionSteps, 1);
+  const reachScaleMax = Math.max(...reachSteps, 1);
+  const xForIndex = (index: number) =>
+    series.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + (index / (series.length - 1)) * plotWidth;
+  const yForMentions = (value: number) => plotTop + plotHeight - (value / mentionScaleMax) * plotHeight;
+  const yForReach = (value: number) => plotTop + plotHeight - (value / reachScaleMax) * plotHeight;
+  const mentionPath = buildLinePath(
+    mentionValues,
+    plotWidth,
+    plotHeight,
+  )
+    .replaceAll(/([ML]) ([^ ]+) ([^ ]+)/g, (_, command, x, y) => {
+      return `${command} ${Number(x) + plotLeft} ${Number(y) + plotTop}`;
+    });
+  const reachPath = buildLinePath(
+    reachValues,
+    plotWidth,
+    plotHeight,
+  )
+    .replaceAll(/([ML]) ([^ ]+) ([^ ]+)/g, (_, command, x, y) => {
+      return `${command} ${Number(x) + plotLeft} ${Number(y) + plotTop}`;
+    });
 
   return (
     <article className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
@@ -622,27 +668,69 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
 
       <div className="mt-5 overflow-hidden rounded-[1.25rem] border border-stone-200 bg-white p-4">
         <svg
-          viewBox={`0 0 ${width} ${height + 32}`}
+          viewBox={`0 0 ${width} ${height}`}
           className="h-64 w-full"
           role="img"
           aria-label="Mentions and reach chart"
         >
+          {mentionSteps.map((step) => {
+            const y = yForMentions(step);
+
+            return (
+              <g key={`grid-${step}`}>
+                <line
+                  x1={plotLeft}
+                  y1={y}
+                  x2={width - plotRight}
+                  y2={y}
+                  stroke="rgba(231,229,228,1)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={plotLeft - 10}
+                  y={y + 4}
+                  textAnchor="end"
+                  fontSize="11"
+                  fill="#78716c"
+                >
+                  {step}
+                </text>
+              </g>
+            );
+          })}
+
+          {reachSteps.map((step) => {
+            const y = yForReach(step);
+
+            return (
+              <text
+                key={`reach-${step}`}
+                x={width - plotRight + 10}
+                y={y + 4}
+                fontSize="11"
+                fill="#78716c"
+              >
+                {formatCompactNumber(step)}
+              </text>
+            );
+          })}
+
           {series.map((point, index) => {
-            const x = series.length === 1 ? width / 2 : (index / (series.length - 1)) * width;
+            const x = xForIndex(index);
 
             return (
               <g key={point.key}>
                 <line
                   x1={x}
-                  y1={0}
+                  y1={plotTop}
                   x2={x}
-                  y2={height}
-                  stroke="rgba(214,211,209,0.8)"
+                  y2={plotTop + plotHeight}
+                  stroke="rgba(245,245,244,0.9)"
                   strokeWidth="1"
                 />
                 <text
                   x={x}
-                  y={height + 20}
+                  y={height - 8}
                   textAnchor="middle"
                   fontSize="11"
                   fill="#78716c"
@@ -653,30 +741,62 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
             );
           })}
 
-          {[0.25, 0.5, 0.75, 1].map((ratio) => (
-            <line
-              key={ratio}
-              x1={0}
-              y1={height - height * ratio}
-              x2={width}
-              y2={height - height * ratio}
-              stroke="rgba(231,229,228,1)"
-              strokeWidth="1"
-            />
-          ))}
+          <path d={mentionPath} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
+          <path d={reachPath} fill="none" stroke="#15803d" strokeWidth="3" strokeLinecap="round" />
 
-          <path d={mentionPath} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" />
-          <path d={reachPath} fill="none" stroke="#15803d" strokeWidth="4" strokeLinecap="round" />
+          {series.map((point, index) => {
+            const x = xForIndex(index);
+            const y = yForMentions(point.mentions);
+
+            return (
+              <g key={`mention-point-${point.key}`}>
+                <circle cx={x} cy={y} r="4.5" fill="#2563eb" />
+                {point.mentions > 0 ? (
+                  <text
+                    x={x}
+                    y={Math.max(plotTop + 12, y - 10)}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#1d4ed8"
+                  >
+                    {point.mentions}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+
+          {series.map((point, index) => {
+            const x = xForIndex(index);
+            const y = yForReach(point.reach);
+
+            return (
+              <g key={`reach-point-${point.key}`}>
+                <circle cx={x} cy={y} r="4.5" fill="#15803d" />
+                {point.reach > 0 ? (
+                  <text
+                    x={x}
+                    y={Math.max(plotTop + 12, y - 10)}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#166534"
+                  >
+                    {formatCompactNumber(point.reach)}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
         </svg>
 
         <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold">
           <span className="flex items-center gap-2 text-blue-600">
             <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
-            Mentions
+            Mentions count
           </span>
           <span className="flex items-center gap-2 text-green-700">
             <span className="h-2.5 w-2.5 rounded-full bg-green-700" />
-            Reach
+            Estimated reach
           </span>
         </div>
       </div>
@@ -1546,6 +1666,7 @@ export function IqxIntelligenceApp() {
     { key: "keywords", label: "Keywords" },
     { key: "projects", label: "Projects" },
   ];
+  const headerWorkspaceTabs = workspaceTabs.filter((tab) => tab.key !== "profile");
   const anonymousNavItems = [
     { key: "overview", label: "Overview", href: "#overview" },
     { key: "access", label: "Access", href: "#access" },
@@ -1626,7 +1747,7 @@ export function IqxIntelligenceApp() {
 
           <nav className="flex flex-wrap items-center gap-2 text-sm text-stone-600">
             {profile
-              ? workspaceTabs.map((item) => (
+              ? headerWorkspaceTabs.map((item) => (
                   <button
                     key={item.key}
                     type="button"
