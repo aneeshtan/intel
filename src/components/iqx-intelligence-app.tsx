@@ -103,6 +103,10 @@ type Mention = {
     demo?: boolean;
     source_name?: string;
     source_url?: string;
+    sentiment_source?: string;
+    original_sentiment?: string;
+    manual_sentiment?: string;
+    manual_sentiment_updated_at?: string;
     num_comments?: number;
     score?: number;
   } | null;
@@ -273,6 +277,13 @@ const alertChannelTypeOptions = [
   { value: "whatsapp", label: "WhatsApp", hint: "Twilio WhatsApp delivery." },
 ] as const;
 
+const mentionSentimentOptions = [
+  { value: "auto", label: "Auto" },
+  { value: "positive", label: "Positive" },
+  { value: "neutral", label: "Neutral" },
+  { value: "negative", label: "Negative" },
+] as const;
+
 function formatPrice(priceCents: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -313,6 +324,10 @@ function buildProjectNameFromKeywords(keywords: string[]) {
   const firstKeyword = keywords[0] ?? "New monitor";
 
   return firstKeyword.length > 70 ? `${firstKeyword.slice(0, 67).trim()}...` : firstKeyword;
+}
+
+function mentionSentimentSelection(mention: Mention) {
+  return mention.metadata?.sentiment_source === "manual" ? mention.sentiment : "auto";
 }
 
 function estimateMentionReach(mention: Mention) {
@@ -936,8 +951,6 @@ export function IqxIntelligenceApp() {
   });
   const [projectForm, setProjectForm] = useState({
     keywords: "",
-    description: "",
-    audience: "",
   });
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -975,6 +988,7 @@ export function IqxIntelligenceApp() {
   });
   const [mentionsQuery, setMentionsQuery] = useState("");
   const [mentionsPage, setMentionsPage] = useState(1);
+  const [updatingMentionId, setUpdatingMentionId] = useState<number | null>(null);
   const [adminArticlesQuery, setAdminArticlesQuery] = useState("");
   const [adminArticlesPage, setAdminArticlesPage] = useState(1);
   const [keywordForm, setKeywordForm] = useState({
@@ -1358,8 +1372,8 @@ export function IqxIntelligenceApp() {
             method: "POST",
             body: JSON.stringify({
               name: projectName,
-              description: projectForm.description || null,
-              audience: projectForm.audience || null,
+              description: null,
+              audience: null,
               monitored_platforms: ["linkedin", "reddit", "x", "media"],
             }),
           },
@@ -1381,7 +1395,7 @@ export function IqxIntelligenceApp() {
           );
         }
 
-        setProjectForm({ keywords: "", description: "", audience: "" });
+        setProjectForm({ keywords: "" });
         await hydrateSession(token, response.data.id);
         setActiveWorkspaceTab("results");
         setFlashMessage(
@@ -1603,6 +1617,52 @@ export function IqxIntelligenceApp() {
         setBootError(null);
       } catch (error) {
         setBootError(error instanceof Error ? error.message : "Influencer mute failed.");
+      }
+    });
+  };
+
+  const handleUpdateMentionSentiment = (
+    mentionId: number,
+    sentiment: (typeof mentionSentimentOptions)[number]["value"],
+  ) => {
+    if (!token || !selectedProjectId) {
+      return;
+    }
+
+    setUpdatingMentionId(mentionId);
+
+    startTransition(async () => {
+      try {
+        const response = await apiRequest<{ data: Mention; message?: string }>(
+          `/projects/${selectedProjectId}/mentions/${mentionId}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ sentiment }),
+          },
+          token,
+        );
+
+        setSelectedProject((current) =>
+          current && current.id === selectedProjectId
+            ? {
+                ...current,
+                mentions: current.mentions.map((mention) =>
+                  mention.id === mentionId ? response.data : mention,
+                ),
+              }
+            : current,
+        );
+        setFlashMessage(
+          response.message ??
+            (sentiment === "auto"
+              ? "Sentiment reset to the system value."
+              : "Sentiment updated."),
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Sentiment update failed.");
+      } finally {
+        setUpdatingMentionId((current) => (current === mentionId ? null : current));
       }
     });
   };
@@ -2320,8 +2380,8 @@ export function IqxIntelligenceApp() {
     <main className="min-h-screen overflow-hidden bg-[var(--canvas)] text-stone-950">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[36rem] bg-[radial-gradient(circle_at_top,_rgba(196,181,253,0.22),_transparent_38%),radial-gradient(circle_at_25%_30%,_rgba(125,211,252,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(251,191,36,0.16),_transparent_24%)]" />
 
-      <div className="sticky top-0 z-30 mx-auto max-w-7xl px-6 pt-6 sm:px-10 lg:px-12">
-        <header className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/60 bg-white/78 px-5 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.06)] backdrop-blur">
+      <div className="sticky top-0 z-30 mx-auto max-w-7xl px-4 pt-4 sm:px-10 sm:pt-6 lg:px-12">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-[1.75rem] border border-white/60 bg-white/78 px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.06)] backdrop-blur sm:rounded-full sm:px-5">
           <div>
             <p className="text-xs tracking-[0.28em] text-stone-500 uppercase">
               Maritime Media Monitoring
@@ -2329,14 +2389,14 @@ export function IqxIntelligenceApp() {
             <h1 className="mt-1 text-lg font-semibold tracking-[-0.03em]">IQX Intelligence</h1>
           </div>
 
-          <nav className="flex flex-wrap items-center gap-2 text-sm text-stone-600">
+          <nav className="order-3 flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 text-sm text-stone-600 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:order-none md:w-auto md:flex-wrap md:overflow-visible md:pb-0">
             {profile
               ? headerWorkspaceTabs.map((item) => (
                   <button
                     key={item.key}
                     type="button"
                     onClick={() => setActiveWorkspaceTab(item.key)}
-                    className={`rounded-full px-3 py-2 transition-colors ${
+                    className={`shrink-0 rounded-full px-3 py-2 transition-colors ${
                       activeWorkspaceTab === item.key
                         ? "bg-stone-950 text-stone-50"
                         : "hover:bg-stone-100 hover:text-stone-950"
@@ -2356,7 +2416,7 @@ export function IqxIntelligenceApp() {
                 ))}
           </nav>
 
-          <div className="flex flex-wrap items-center gap-3 text-sm text-stone-500">
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 text-sm text-stone-500 sm:w-auto sm:gap-3">
             {profile ? (
               <>
                 {isAdmin ? (
@@ -2412,14 +2472,14 @@ export function IqxIntelligenceApp() {
       {!profile ? (
         <section
           id="overview"
-          className="relative mx-auto flex max-w-7xl scroll-mt-28 flex-col px-6 pb-12 pt-10 sm:px-10 lg:px-12"
+          className="relative mx-auto flex max-w-7xl scroll-mt-28 flex-col px-4 pb-10 pt-8 sm:px-10 sm:pb-12 sm:pt-10 lg:px-12"
         >
           <div className="grid gap-8 pb-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
             <div className="max-w-3xl">
               <p className="text-sm tracking-[0.28em] text-stone-500 uppercase">
                 Track reputation, risk, and market narratives in one place
               </p>
-              <h2 className="mt-6 max-w-4xl text-5xl leading-[0.92] font-semibold tracking-[-0.06em] text-balance sm:text-6xl lg:text-7xl">
+              <h2 className="mt-6 max-w-4xl text-4xl leading-[0.94] font-semibold tracking-[-0.06em] text-balance sm:text-6xl lg:text-7xl">
                 A clearer,
                 <span className="font-serif italic text-stone-600">
                   {" "}
@@ -2427,7 +2487,7 @@ export function IqxIntelligenceApp() {
                 </span>{" "}
                 way to monitor the maritime conversation.
               </h2>
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-stone-600">
+              <p className="mt-6 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg sm:leading-8">
                 IQX Intelligence helps shipping brands, port operators, logistics teams,
                 and maritime advisors track keywords across LinkedIn, X, Reddit, and industry
                 media, then turn those signals into organized projects, alerts, and
@@ -2443,7 +2503,7 @@ export function IqxIntelligenceApp() {
 
             <aside
               id="access"
-              className="scroll-mt-28 rounded-[2.25rem] border border-white/60 bg-white/78 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur"
+              className="scroll-mt-28 rounded-[2rem] border border-white/60 bg-white/78 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[2.25rem] sm:p-6"
             >
               <div className="flex gap-2 rounded-full border border-stone-200 bg-stone-50 p-1">
                 <button
@@ -2570,7 +2630,7 @@ export function IqxIntelligenceApp() {
         </section>
       ) : null}
 
-      <section className="relative mx-auto max-w-[90rem] px-4 py-5 sm:px-6 lg:px-8">
+      <section className="relative mx-auto max-w-[90rem] px-3 py-4 sm:px-6 sm:py-5 lg:px-8">
         {flashMessage ? (
           <div className="mb-6 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
             {flashMessage}
@@ -2588,9 +2648,9 @@ export function IqxIntelligenceApp() {
             Loading your monitoring workspace...
           </div>
         ) : profile ? (
-          <div className="grid items-start gap-5 xl:grid-cols-[21rem_minmax(0,1fr)]">
+          <div className="grid items-start gap-4 xl:grid-cols-[21rem_minmax(0,1fr)] xl:gap-5">
             <section className="grid gap-5 xl:sticky xl:top-28">
-              <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+              <article className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -2599,7 +2659,7 @@ export function IqxIntelligenceApp() {
                     <button
                       type="button"
                       onClick={() => setActiveWorkspaceTab("profile")}
-                      className="mt-2 inline-flex items-center gap-2 text-left text-3xl font-semibold tracking-[-0.04em] text-stone-950 transition-colors hover:text-stone-600"
+                      className="mt-2 inline-flex items-center gap-2 text-left text-2xl font-semibold tracking-[-0.04em] text-stone-950 transition-colors hover:text-stone-600 sm:text-3xl"
                       aria-label="Open profile settings"
                     >
                       <span>{profile.name}</span>
@@ -2653,7 +2713,7 @@ export function IqxIntelligenceApp() {
                 </div>
               </article>
 
-              <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+              <article className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -2707,7 +2767,7 @@ export function IqxIntelligenceApp() {
             </section>
 
             <section className="grid gap-5">
-              <article className="rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,243,239,0.92))] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+              <article className="rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,243,239,0.92))] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
                 {activeWorkspaceTab === "articles" ? (
                   <>
                     <div>
@@ -2757,7 +2817,7 @@ export function IqxIntelligenceApp() {
                         <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                           {currentTabCopy.eyebrow}
                         </p>
-                        <h3 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]">
+                        <h3 className="mt-2 text-[1.65rem] font-semibold tracking-[-0.04em] sm:text-[2rem]">
                           {currentTabCopy.title}
                         </h3>
                         <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
@@ -2777,13 +2837,13 @@ export function IqxIntelligenceApp() {
                       </div>
                     </div>
 
-                    <div className="mt-5 flex flex-wrap gap-3">
+                    <div className="mt-5 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
                       {workspaceTabs.map((tab) => (
                         <button
                           key={tab.key}
                           type="button"
                           onClick={() => setActiveWorkspaceTab(tab.key)}
-                          className={`rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
+                          className={`shrink-0 rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
                             activeWorkspaceTab === tab.key
                               ? "bg-stone-950 text-stone-50"
                               : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
@@ -2794,7 +2854,7 @@ export function IqxIntelligenceApp() {
                       ))}
                     </div>
 
-                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Current plan
@@ -2851,14 +2911,14 @@ export function IqxIntelligenceApp() {
                         <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                           {currentTabCopy.eyebrow}
                         </p>
-                        <h3 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]">
+                        <h3 className="mt-2 text-[1.65rem] font-semibold tracking-[-0.04em] sm:text-[2rem]">
                           {currentTabCopy.title}
                         </h3>
                         <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
                           {currentTabCopy.description}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex w-full flex-nowrap gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
                         <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
                           {currentProject?.name ?? "No project selected"}
                         </span>
@@ -2886,13 +2946,13 @@ export function IqxIntelligenceApp() {
                       </div>
                     </div>
 
-                    <div className="mt-5 flex flex-wrap gap-3">
+                    <div className="mt-5 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
                       {workspaceTabs.map((tab) => (
                         <button
                           key={tab.key}
                           type="button"
                           onClick={() => setActiveWorkspaceTab(tab.key)}
-                          className={`rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
+                          className={`shrink-0 rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
                             activeWorkspaceTab === tab.key
                               ? "bg-stone-950 text-stone-50"
                               : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
@@ -2903,7 +2963,7 @@ export function IqxIntelligenceApp() {
                       ))}
                     </div>
 
-                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       {overviewCards.map((card) => (
                         <article
                           key={card.label}
@@ -2927,11 +2987,11 @@ export function IqxIntelligenceApp() {
                 <div className="grid gap-5">
                   <article
                     id="results"
-                    className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]"
+                    className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5"
                   >
                     <MentionReachChart mentions={filteredMentions} />
 
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
                       <div>
                         <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                           Recent results
@@ -2947,7 +3007,7 @@ export function IqxIntelligenceApp() {
                         <button
                           type="button"
                           onClick={handleExportPdfReport}
-                          className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                            className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
                         >
                           Export PDF
                         </button>
@@ -2989,7 +3049,33 @@ export function IqxIntelligenceApp() {
                                 <span>•</span>
                                 <span>{formatPublishedAt(mention.published_at)}</span>
                               </div>
-                              <ResultToneBadge tone={mention.sentiment} />
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <ResultToneBadge tone={mention.sentiment} />
+                                <label className="flex items-center gap-2 text-xs font-medium text-stone-500">
+                                  <span>
+                                    {mention.metadata?.sentiment_source === "manual"
+                                      ? "Manual"
+                                      : "System"}
+                                  </span>
+                                  <select
+                                    value={mentionSentimentSelection(mention)}
+                                    onChange={(event) =>
+                                      handleUpdateMentionSentiment(
+                                        mention.id,
+                                        event.target.value as (typeof mentionSentimentOptions)[number]["value"],
+                                      )
+                                    }
+                                    disabled={updatingMentionId === mention.id}
+                                    className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700 outline-none transition focus:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {mentionSentimentOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
                             </div>
 
                             <h4 className="mt-3 text-lg font-semibold tracking-[-0.03em] text-stone-900">
@@ -3002,10 +3088,10 @@ export function IqxIntelligenceApp() {
                               <span>{mention.author_name ?? "Unknown source"}</span>
                               <span>Keyword: {mention.tracked_keyword?.keyword ?? "Unlinked"}</span>
                             </div>
-                            <div className="mt-4 flex flex-wrap gap-3 border-t border-stone-200 pt-4 text-sm">
+                            <div className="mt-4 flex flex-col gap-3 border-t border-stone-200 pt-4 text-sm sm:flex-row sm:flex-wrap">
                               <button
                                 type="button"
-                                className="font-semibold text-blue-700 transition-colors hover:text-blue-900"
+                                className="w-full rounded-full border border-blue-200 px-4 py-2 text-center font-semibold text-blue-700 transition-colors hover:border-blue-400 hover:text-blue-900 sm:w-auto sm:rounded-none sm:border-0 sm:px-0 sm:py-0 sm:text-left"
                                 onClick={() => {
                                   if (mention.url) {
                                     window.open(mention.url, "_blank", "noopener,noreferrer");
@@ -3017,7 +3103,7 @@ export function IqxIntelligenceApp() {
                               <button
                                 type="button"
                                 onClick={handleExportPdfReport}
-                                className="font-semibold text-stone-700 transition-colors hover:text-stone-950"
+                                className="w-full rounded-full border border-stone-300 px-4 py-2 text-center font-semibold text-stone-700 transition-colors hover:border-stone-500 hover:text-stone-950 sm:w-auto sm:rounded-none sm:border-0 sm:px-0 sm:py-0 sm:text-left"
                               >
                                 Add to PDF report
                               </button>
@@ -3031,7 +3117,7 @@ export function IqxIntelligenceApp() {
                       )}
                     </div>
                     {filteredMentions.length > 0 ? (
-                      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-stone-200 pt-5">
+                      <div className="mt-5 flex flex-col items-start justify-between gap-4 border-t border-stone-200 pt-5 sm:flex-row sm:items-center">
                         <p className="text-sm text-stone-500">
                           Page {safeMentionsPage} of {totalMentionsPages}
                         </p>
@@ -3045,7 +3131,10 @@ export function IqxIntelligenceApp() {
                             Previous
                           </button>
                           {Array.from({ length: totalMentionsPages }, (_, index) => index + 1)
-                            .slice(Math.max(0, safeMentionsPage - 3), Math.max(5, safeMentionsPage + 2))
+                            .slice(
+                              Math.max(0, safeMentionsPage - 2),
+                              Math.max(4, safeMentionsPage + 1),
+                            )
                             .map((page) => (
                               <button
                                 key={page}
@@ -4588,7 +4677,7 @@ export function IqxIntelligenceApp() {
                     Enter keywords or key phrases
                   </h3>
                   <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
-                    Add comma-separated keywords to monitor. IQX will name the project from the first keyword and set up the rest as tracked terms automatically.
+                    Add comma-separated keywords to monitor. IQX will use the first keyword as the project name and add the rest as tracked terms automatically.
                   </p>
 
                   <div className="mt-5 grid gap-4">
@@ -4606,38 +4695,8 @@ export function IqxIntelligenceApp() {
                         placeholder="SeaLead, Red Sea disruption, container rates"
                       />
                       <span className="mt-2 block text-sm font-normal text-stone-500">
-                        Type comma-separated phrases to monitor.
+                        Type comma-separated phrases to monitor. The first one becomes the project name.
                       </span>
-                    </label>
-
-                    <label className="text-sm font-medium text-stone-700">
-                      Audience
-                      <input
-                        className={inputClassName}
-                        value={projectForm.audience}
-                        onChange={(event) =>
-                          setProjectForm((current) => ({
-                            ...current,
-                            audience: event.target.value,
-                          }))
-                        }
-                        placeholder="Ports, shipowners, charterers"
-                      />
-                    </label>
-
-                    <label className="text-sm font-medium text-stone-700">
-                      Monitoring brief
-                      <textarea
-                        className={`${inputClassName} min-h-28 resize-none`}
-                        value={projectForm.description}
-                        onChange={(event) =>
-                          setProjectForm((current) => ({
-                            ...current,
-                            description: event.target.value,
-                          }))
-                        }
-                        placeholder="Explain what this workspace should monitor."
-                      />
                     </label>
 
                     <div className="flex flex-wrap gap-3">
@@ -4647,7 +4706,7 @@ export function IqxIntelligenceApp() {
                         disabled={isPending || !parseKeywordList(projectForm.keywords).length}
                         className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        Create monitor
+                        Create project
                       </button>
                       <button
                         type="button"

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProjectAlertRuleController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectListeningController;
+use App\Http\Controllers\Api\ProjectMentionController;
 use App\Http\Controllers\Api\TrackedKeywordController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('billing/portal', [BillingController::class, 'portal']);
 
     Route::apiResource('projects', ProjectController::class);
+    Route::patch('projects/{project}/mentions/{mention}', [ProjectMentionController::class, 'update']);
     Route::post('projects/{project}/sources/mute', [ProjectListeningController::class, 'muteSource']);
     Route::delete('projects/{project}/sources/mute/{domain}', [ProjectListeningController::class, 'unmuteSource']);
     Route::post('projects/{project}/influencers/mute', [ProjectListeningController::class, 'muteInfluencer']);

@@ -267,6 +267,68 @@ class ProjectApiTest extends TestCase
             ->assertJsonCount(0, 'data.mentions');
     }
 
+    public function test_authenticated_user_can_override_a_mentions_sentiment(): void
+    {
+        $this->seed([
+            PermissionsTableSeeder::class,
+            RolesTableSeeder::class,
+            ConnectRelationshipsSeeder::class,
+            PlanSeeder::class,
+        ]);
+
+        $user = User::factory()->create();
+        $role = config('roles.models.role')::query()->where('slug', 'user')->first();
+        $user->attachRole($role);
+
+        $project = $user->projects()->create([
+            'name' => 'Sentiment Watch',
+            'slug' => 'sentiment-watch',
+            'status' => 'active',
+            'monitored_platforms' => ['media'],
+        ]);
+
+        $keyword = $project->trackedKeywords()->create([
+            'keyword' => 'SeaLead',
+            'platform' => 'media',
+            'match_type' => 'phrase',
+            'is_active' => true,
+        ]);
+
+        $mention = Mention::query()->create([
+            'project_id' => $project->id,
+            'tracked_keyword_id' => $keyword->id,
+            'source' => 'media',
+            'external_id' => 'sentiment-override-target',
+            'title' => 'SeaLead expands service options',
+            'body' => 'SeaLead was mentioned in a neutral operational update.',
+            'sentiment' => 'neutral',
+            'published_at' => now(),
+            'metadata' => ['source_name' => 'The Loadstar'],
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/projects/{$project->id}/mentions/{$mention->id}", [
+            'sentiment' => 'negative',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.sentiment', 'negative')
+            ->assertJsonPath('data.metadata.sentiment_source', 'manual')
+            ->assertJsonPath('data.metadata.original_sentiment', 'neutral');
+
+        $this->assertDatabaseHas('mentions', [
+            'id' => $mention->id,
+            'sentiment' => 'negative',
+        ]);
+
+        $this->patchJson("/api/projects/{$project->id}/mentions/{$mention->id}", [
+            'sentiment' => 'auto',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.sentiment', 'neutral')
+            ->assertJsonPath('data.metadata.sentiment_source', 'system');
+    }
+
     public function test_media_ingest_command_backfills_recent_articles_and_generates_mentions(): void
     {
         $this->fakeMediaFeeds();
