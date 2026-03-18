@@ -51,15 +51,14 @@ class AdminMediaCaptureTest extends TestCase
             ->assertJsonPath('data.projects_processed', 1)
             ->assertJsonPath('data.capture_started', true);
 
-        Process::assertRan(function ($pendingProcess) use ($project) {
+        Process::assertRan(function ($pendingProcess) {
             $command = $pendingProcess->command;
 
             if (is_array($command)) {
                 return $command === [
                     'php',
                     'artisan',
-                    'media:ingest',
-                    "--project={$project->id}",
+                    'media:discover',
                     '--force',
                     '--days=90',
                 ];

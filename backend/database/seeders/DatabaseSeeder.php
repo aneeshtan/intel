@@ -26,8 +26,8 @@ class DatabaseSeeder extends Seeder
             $adminRole = config('roles.models.role')::query()->where('slug', 'admin')->first();
 
             $admin = User::query()->firstOrCreate(
-                ['email' => 'admin@iqxintel.local'],
-                ['name' => 'IQX Admin', 'password' => 'Password123'],
+                ['email' => 'admin@admin.com'],
+                ['name' => 'IQX Admin', 'password' => 'admin'],
             );
 
             if ($adminRole && ! $admin->hasRole('admin')) {

@@ -1,0 +1,12 @@
+[program:iqx-backend-queue]
+directory=/var/www/iqx-intel/backend
+command=/usr/bin/php artisan queue:work --queue=default --sleep=3 --tries=3 --timeout=120 --max-time=3600
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/iqx-backend-queue.log
+stopwaitsecs=3600

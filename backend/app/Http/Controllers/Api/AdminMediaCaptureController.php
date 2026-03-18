@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Project;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Process;
 
@@ -11,7 +12,7 @@ class AdminMediaCaptureController extends Controller
 {
     public function __invoke(): JsonResponse
     {
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = request()->user();
 
         abort_unless($user && $user->hasRole('admin'), 403, 'Admin access is required.');
@@ -27,12 +28,11 @@ class AdminMediaCaptureController extends Controller
         $processedProjects = 0;
 
         $commands = [];
-        $mediaCommand = ['php', 'artisan', 'media:ingest'];
+        $mediaCommand = ['php', 'artisan', 'media:discover'];
         $redditCommand = ['php', 'artisan', 'reddit:ingest'];
         $xCommand = ['php', 'artisan', 'x:ingest'];
 
         if ($projectId) {
-            $mediaCommand[] = "--project={$projectId}";
             $redditCommand[] = "--project={$projectId}";
             $xCommand[] = "--project={$projectId}";
         }

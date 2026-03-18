@@ -30,6 +30,7 @@ type WorkspaceTab =
   | "analysis"
   | "sources"
   | "articles"
+  | "alerts"
   | "profile"
   | "keywords"
   | "projects"
@@ -65,6 +66,7 @@ type Profile = {
   counts: {
     projects: number;
     keywords: number;
+    unread_alerts: number;
   };
 };
 
@@ -198,6 +200,79 @@ type AuthResponse = {
   };
 };
 
+type AlertChannel = {
+  id: number;
+  type: string;
+  name: string;
+  destination: string | null;
+  config: Record<string, string> | null;
+  is_active: boolean;
+  created_at: string | null;
+};
+
+type AlertRule = {
+  id: number;
+  name: string;
+  is_active: boolean;
+  frequency: string;
+  sentiment: string | null;
+  min_reach: number | null;
+  source_filters: string[];
+  tracked_keyword_ids: number[];
+  channels: {
+    id: number;
+    name: string;
+    type: string;
+    is_active: boolean;
+  }[];
+  created_at: string | null;
+};
+
+type AlertInboxItem = {
+  id: number;
+  status: string;
+  frequency: string;
+  subject: string | null;
+  body: string | null;
+  payload: Record<string, unknown> | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  channel: {
+    id: number;
+    type: string;
+    name: string;
+  } | null;
+  rule: {
+    id: number;
+    name: string;
+    project_id: number;
+    project_name: string | null;
+  } | null;
+  mention: {
+    id: number;
+    title: string | null;
+    source: string;
+    url: string | null;
+    published_at: string | null;
+    tracked_keyword: {
+      id: number;
+      keyword: string;
+    } | null;
+  } | null;
+};
+
+const alertChannelTypeOptions = [
+  { value: "in_app", label: "In-app", hint: "Workspace inbox alerts." },
+  { value: "email", label: "Email", hint: "Send mention alerts by email." },
+  { value: "slack", label: "Slack", hint: "Incoming webhook delivery to Slack." },
+  { value: "teams", label: "Teams", hint: "Incoming webhook delivery to Microsoft Teams." },
+  { value: "discord", label: "Discord", hint: "Incoming webhook delivery to Discord." },
+  { value: "telegram", label: "Telegram", hint: "Bot token plus chat id." },
+  { value: "webhook", label: "Webhook", hint: "Structured JSON to any endpoint." },
+  { value: "sms", label: "SMS", hint: "Twilio SMS delivery." },
+  { value: "whatsapp", label: "WhatsApp", hint: "Twilio WhatsApp delivery." },
+] as const;
+
 function formatPrice(priceCents: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -224,6 +299,20 @@ function formatCompactNumber(value: number) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+function parseKeywordList(value: string) {
+  return value
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .filter((keyword, index, all) => all.indexOf(keyword) === index);
+}
+
+function buildProjectNameFromKeywords(keywords: string[]) {
+  const firstKeyword = keywords[0] ?? "New monitor";
+
+  return firstKeyword.length > 70 ? `${firstKeyword.slice(0, 67).trim()}...` : firstKeyword;
 }
 
 function estimateMentionReach(mention: Mention) {
@@ -284,12 +373,12 @@ function buildMentionReachSeries(mentions: Mention[]) {
   return points;
 }
 
-function buildLinePath(values: number[], width: number, height: number) {
+function buildLinePath(values: number[], width: number, height: number, scaleMax?: number) {
   if (!values.length) {
     return "";
   }
 
-  const max = Math.max(...values, 1);
+  const max = Math.max(scaleMax ?? Math.max(...values, 1), 1);
 
   return values
     .map((value, index) => {
@@ -639,6 +728,7 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
     mentionValues,
     plotWidth,
     plotHeight,
+    mentionScaleMax,
   )
     .replaceAll(/([ML]) ([^ ]+) ([^ ]+)/g, (_, command, x, y) => {
       return `${command} ${Number(x) + plotLeft} ${Number(y) + plotTop}`;
@@ -647,6 +737,7 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
     reachValues,
     plotWidth,
     plotHeight,
+    reachScaleMax,
   )
     .replaceAll(/([ML]) ([^ ]+) ([^ ]+)/g, (_, command, x, y) => {
       return `${command} ${Number(x) + plotLeft} ${Number(y) + plotTop}`;
@@ -741,8 +832,22 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
             );
           })}
 
-          <path d={mentionPath} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
-          <path d={reachPath} fill="none" stroke="#15803d" strokeWidth="3" strokeLinecap="round" />
+          <path
+            d={mentionPath}
+            fill="none"
+            stroke="#2563eb"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={reachPath}
+            fill="none"
+            stroke="#15803d"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
 
           {series.map((point, index) => {
             const x = xForIndex(index);
@@ -791,11 +896,11 @@ function MentionReachChart({ mentions }: { mentions: Mention[] }) {
 
         <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold">
           <span className="flex items-center gap-2 text-blue-600">
-            <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+            <span className="h-0.5 w-6 rounded-full bg-blue-600" />
             Mentions count
           </span>
           <span className="flex items-center gap-2 text-green-700">
-            <span className="h-2.5 w-2.5 rounded-full bg-green-700" />
+            <span className="h-0.5 w-6 rounded-full bg-green-700" />
             Estimated reach
           </span>
         </div>
@@ -812,6 +917,9 @@ export function IqxIntelligenceApp() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null);
+  const [alertChannels, setAlertChannels] = useState<AlertChannel[]>([]);
+  const [projectAlertRules, setProjectAlertRules] = useState<AlertRule[]>([]);
+  const [alertInbox, setAlertInbox] = useState<AlertInboxItem[]>([]);
   const [mediaCoverage, setMediaCoverage] = useState<MediaCoverage | null>(null);
   const [capturedArticles, setCapturedArticles] = useState<AdminCapturedArticles | null>(null);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("results");
@@ -827,7 +935,7 @@ export function IqxIntelligenceApp() {
     passwordConfirmation: "",
   });
   const [projectForm, setProjectForm] = useState({
-    name: "",
+    keywords: "",
     description: "",
     audience: "",
   });
@@ -836,6 +944,28 @@ export function IqxIntelligenceApp() {
     email: "",
     password: "",
     passwordConfirmation: "",
+  });
+  const [alertChannelForm, setAlertChannelForm] = useState({
+    editingId: null as number | null,
+    name: "",
+    type: "in_app",
+    destination: "",
+    botToken: "",
+    accountSid: "",
+    authToken: "",
+    fromNumber: "",
+    isActive: true,
+  });
+  const [alertRuleForm, setAlertRuleForm] = useState({
+    editingId: null as number | null,
+    name: "",
+    frequency: "instant",
+    minReach: "",
+    sentiment: "all",
+    sourceFilters: ["media", "reddit", "x"] as string[],
+    trackedKeywordIds: [] as number[],
+    channelIds: [] as number[],
+    isActive: true,
   });
   const [projectEditorForm, setProjectEditorForm] = useState({
     name: "",
@@ -860,6 +990,9 @@ export function IqxIntelligenceApp() {
     setProjects([]);
     setSelectedProjectId(null);
     setSelectedProject(null);
+    setAlertChannels([]);
+    setProjectAlertRules([]);
+    setAlertInbox([]);
     setMediaCoverage(null);
     setCapturedArticles(null);
     setActiveWorkspaceTab("results");
@@ -884,6 +1017,42 @@ export function IqxIntelligenceApp() {
           : project,
       ),
     );
+  };
+
+  const loadAlertChannels = async (authToken: string) => {
+    const response = await apiRequest<{ data: AlertChannel[] }>(
+      "/alerts/channels",
+      {},
+      authToken,
+    );
+
+    setAlertChannels(response.data);
+
+    return response.data;
+  };
+
+  const loadAlertInbox = async (authToken: string) => {
+    const response = await apiRequest<{ data: AlertInboxItem[] }>(
+      "/alerts/inbox",
+      {},
+      authToken,
+    );
+
+    setAlertInbox(response.data);
+
+    return response.data;
+  };
+
+  const loadProjectAlertRules = async (authToken: string, projectId: number) => {
+    const response = await apiRequest<{ data: AlertRule[] }>(
+      `/projects/${projectId}/alerts`,
+      {},
+      authToken,
+    );
+
+    setProjectAlertRules(response.data);
+
+    return response.data;
   };
 
   const loadMediaCoverage = async (authToken: string) => {
@@ -952,13 +1121,17 @@ export function IqxIntelligenceApp() {
   };
 
   const hydrateSession = async (authToken: string, preferredProjectId?: number | null) => {
-    const [meResponse, projectsResponse] = await Promise.all([
+    const [meResponse, projectsResponse, channelsResponse, inboxResponse] = await Promise.all([
       apiRequest<{ data: Profile }>("/me", {}, authToken),
       apiRequest<{ data: ProjectSummary[] }>("/projects", {}, authToken),
+      apiRequest<{ data: AlertChannel[] }>("/alerts/channels", {}, authToken),
+      apiRequest<{ data: AlertInboxItem[] }>("/alerts/inbox", {}, authToken),
     ]);
 
     setProfile(meResponse.data);
     setProjects(projectsResponse.data);
+    setAlertChannels(channelsResponse.data);
+    setAlertInbox(inboxResponse.data);
 
     const projectId =
       projectsResponse.data.find((project) => project.id === preferredProjectId)?.id ??
@@ -968,9 +1141,13 @@ export function IqxIntelligenceApp() {
     setSelectedProjectId(projectId);
 
     if (projectId) {
-      await loadProjectDetail(authToken, projectId);
+      await Promise.all([
+        loadProjectDetail(authToken, projectId),
+        loadProjectAlertRules(authToken, projectId),
+      ]);
     } else {
       setSelectedProject(null);
+      setProjectAlertRules([]);
     }
 
     if (meResponse.data.roles.includes("admin")) {
@@ -1030,6 +1207,18 @@ export function IqxIntelligenceApp() {
       status: selectedProject?.status ?? "active",
     });
   }, [selectedProject]);
+
+  useEffect(() => {
+    setAlertRuleForm((current) => ({
+      ...current,
+      trackedKeywordIds: current.trackedKeywordIds.filter((keywordId) =>
+        (selectedProject?.tracked_keywords ?? []).some((keyword) => keyword.id === keywordId),
+      ),
+      channelIds: current.channelIds.filter((channelId) =>
+        alertChannels.some((channel) => channel.id === channelId),
+      ),
+    }));
+  }, [alertChannels, selectedProject]);
 
   useEffect(() => {
     setMentionsPage(1);
@@ -1155,12 +1344,20 @@ export function IqxIntelligenceApp() {
 
     startTransition(async () => {
       try {
+        const keywords = parseKeywordList(projectForm.keywords);
+
+        if (!keywords.length) {
+          setBootError("Add at least one keyword or key phrase to create a project.");
+          return;
+        }
+
+        const projectName = buildProjectNameFromKeywords(keywords);
         const response = await apiRequest<{ data: ProjectSummary }>(
           "/projects",
           {
             method: "POST",
             body: JSON.stringify({
-              name: projectForm.name,
+              name: projectName,
               description: projectForm.description || null,
               audience: projectForm.audience || null,
               monitored_platforms: ["linkedin", "reddit", "x", "media"],
@@ -1169,10 +1366,27 @@ export function IqxIntelligenceApp() {
           token,
         );
 
-        setProjectForm({ name: "", description: "", audience: "" });
+        for (const keyword of keywords) {
+          await apiRequest<{ data: TrackedKeyword }>(
+            `/projects/${response.data.id}/keywords`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                keyword,
+                platform: "all",
+                match_type: "phrase",
+              }),
+            },
+            token,
+          );
+        }
+
+        setProjectForm({ keywords: "", description: "", audience: "" });
         await hydrateSession(token, response.data.id);
         setActiveWorkspaceTab("results");
-        setFlashMessage(`Project "${response.data.name}" created.`);
+        setFlashMessage(
+          `Project "${response.data.name}" created with ${keywords.length} keyword${keywords.length === 1 ? "" : "s"}.`,
+        );
         setBootError(null);
       } catch (error) {
         setBootError(error instanceof Error ? error.message : "Project creation failed.");
@@ -1253,7 +1467,10 @@ export function IqxIntelligenceApp() {
 
     startTransition(async () => {
       try {
-        await loadProjectDetail(token, projectId);
+        await Promise.all([
+          loadProjectDetail(token, projectId),
+          loadProjectAlertRules(token, projectId),
+        ]);
         setBootError(null);
       } catch (error) {
         setBootError(error instanceof Error ? error.message : "Project load failed.");
@@ -1410,6 +1627,345 @@ export function IqxIntelligenceApp() {
         setBootError(null);
       } catch (error) {
         setBootError(error instanceof Error ? error.message : "Influencer unmute failed.");
+      }
+    });
+  };
+
+  const resetAlertChannelForm = () => {
+    setAlertChannelForm({
+      editingId: null,
+      name: "",
+      type: "in_app",
+      destination: "",
+      botToken: "",
+      accountSid: "",
+      authToken: "",
+      fromNumber: "",
+      isActive: true,
+    });
+  };
+
+  const resetAlertRuleForm = () => {
+    setAlertRuleForm({
+      editingId: null,
+      name: "",
+      frequency: "instant",
+      minReach: "",
+      sentiment: "all",
+      sourceFilters: ["media", "reddit", "x"],
+      trackedKeywordIds: [],
+      channelIds: [],
+      isActive: true,
+    });
+  };
+
+  const handleEditAlertChannel = (channel: AlertChannel) => {
+    setActiveWorkspaceTab("alerts");
+    setAlertChannelForm({
+      editingId: channel.id,
+      name: channel.name,
+      type: channel.type,
+      destination: channel.destination ?? "",
+      botToken: channel.config?.bot_token ?? "",
+      accountSid: channel.config?.account_sid ?? "",
+      authToken: channel.config?.auth_token ?? "",
+      fromNumber: channel.config?.from_number ?? "",
+      isActive: channel.is_active,
+    });
+  };
+
+  const handleSaveAlertChannel = () => {
+    if (!token) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const config: Record<string, string> = {};
+
+        if (alertChannelForm.type === "telegram" && alertChannelForm.botToken.trim()) {
+          config.bot_token = alertChannelForm.botToken.trim();
+        }
+
+        if (["sms", "whatsapp"].includes(alertChannelForm.type)) {
+          if (alertChannelForm.accountSid.trim()) {
+            config.account_sid = alertChannelForm.accountSid.trim();
+          }
+
+          if (alertChannelForm.authToken.trim()) {
+            config.auth_token = alertChannelForm.authToken.trim();
+          }
+
+          if (alertChannelForm.fromNumber.trim()) {
+            config.from_number = alertChannelForm.fromNumber.trim();
+          }
+        }
+
+        const destination =
+          alertChannelForm.type === "in_app" ? null : alertChannelForm.destination.trim() || null;
+        const payload = {
+          type: alertChannelForm.type,
+          name: alertChannelForm.name.trim(),
+          destination,
+          config,
+          is_active: alertChannelForm.isActive,
+        };
+
+        await apiRequest<{ data: AlertChannel }>(
+          alertChannelForm.editingId
+            ? `/alerts/channels/${alertChannelForm.editingId}`
+            : "/alerts/channels",
+          {
+            method: alertChannelForm.editingId ? "PATCH" : "POST",
+            body: JSON.stringify(payload),
+          },
+          token,
+        );
+
+        await loadAlertChannels(token);
+
+        if (selectedProjectId) {
+          await loadProjectAlertRules(token, selectedProjectId);
+        }
+
+        resetAlertChannelForm();
+        setFlashMessage(
+          alertChannelForm.editingId
+            ? "Alert channel updated."
+            : "Alert channel added.",
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert channel save failed.");
+      }
+    });
+  };
+
+  const handleToggleAlertChannel = (channel: AlertChannel) => {
+    if (!token) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await apiRequest<{ data: AlertChannel }>(
+          `/alerts/channels/${channel.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              is_active: !channel.is_active,
+            }),
+          },
+          token,
+        );
+
+        await loadAlertChannels(token);
+        setFlashMessage(
+          channel.is_active
+            ? `Alert channel "${channel.name}" paused.`
+            : `Alert channel "${channel.name}" re-enabled.`,
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert channel update failed.");
+      }
+    });
+  };
+
+  const handleDeleteAlertChannel = (channel: AlertChannel) => {
+    if (!token) {
+      return;
+    }
+
+    if (!window.confirm(`Delete alert channel "${channel.name}"?`)) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await apiRequest(
+          `/alerts/channels/${channel.id}`,
+          {
+            method: "DELETE",
+          },
+          token,
+        );
+
+        await loadAlertChannels(token);
+
+        if (selectedProjectId) {
+          await loadProjectAlertRules(token, selectedProjectId);
+        }
+
+        if (alertChannelForm.editingId === channel.id) {
+          resetAlertChannelForm();
+        }
+
+        setFlashMessage(`Alert channel "${channel.name}" deleted.`);
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert channel deletion failed.");
+      }
+    });
+  };
+
+  const handleEditAlertRule = (rule: AlertRule) => {
+    setActiveWorkspaceTab("alerts");
+    setAlertRuleForm({
+      editingId: rule.id,
+      name: rule.name,
+      frequency: rule.frequency,
+      minReach: rule.min_reach ? `${rule.min_reach}` : "",
+      sentiment: rule.sentiment ?? "all",
+      sourceFilters: rule.source_filters.length ? rule.source_filters : ["media", "reddit", "x"],
+      trackedKeywordIds: rule.tracked_keyword_ids,
+      channelIds: rule.channels.map((channel) => channel.id),
+      isActive: rule.is_active,
+    });
+  };
+
+  const handleSaveAlertRule = () => {
+    if (!token || !selectedProjectId) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await apiRequest<{ data: AlertRule }>(
+          alertRuleForm.editingId
+            ? `/projects/${selectedProjectId}/alerts/${alertRuleForm.editingId}`
+            : `/projects/${selectedProjectId}/alerts`,
+          {
+            method: alertRuleForm.editingId ? "PATCH" : "POST",
+            body: JSON.stringify({
+              name: alertRuleForm.name.trim(),
+              frequency: alertRuleForm.frequency,
+              is_active: alertRuleForm.isActive,
+              min_reach: alertRuleForm.minReach.trim()
+                ? Number(alertRuleForm.minReach)
+                : null,
+              sentiment: alertRuleForm.sentiment === "all" ? null : alertRuleForm.sentiment,
+              source_filters: alertRuleForm.sourceFilters,
+              tracked_keyword_ids: alertRuleForm.trackedKeywordIds,
+              channel_ids: alertRuleForm.channelIds,
+            }),
+          },
+          token,
+        );
+
+        await loadProjectAlertRules(token, selectedProjectId);
+        await loadAlertInbox(token);
+        resetAlertRuleForm();
+        setFlashMessage(
+          alertRuleForm.editingId
+            ? "Alert rule updated."
+            : "Alert rule created.",
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert rule save failed.");
+      }
+    });
+  };
+
+  const handleToggleAlertRule = (rule: AlertRule) => {
+    if (!token || !selectedProjectId) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await apiRequest<{ data: AlertRule }>(
+          `/projects/${selectedProjectId}/alerts/${rule.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              is_active: !rule.is_active,
+            }),
+          },
+          token,
+        );
+
+        await loadProjectAlertRules(token, selectedProjectId);
+        setFlashMessage(
+          rule.is_active
+            ? `Alert rule "${rule.name}" paused.`
+            : `Alert rule "${rule.name}" re-enabled.`,
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert rule update failed.");
+      }
+    });
+  };
+
+  const handleDeleteAlertRule = (rule: AlertRule) => {
+    if (!token || !selectedProjectId) {
+      return;
+    }
+
+    if (!window.confirm(`Delete alert rule "${rule.name}"?`)) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await apiRequest(
+          `/projects/${selectedProjectId}/alerts/${rule.id}`,
+          {
+            method: "DELETE",
+          },
+          token,
+        );
+
+        await loadProjectAlertRules(token, selectedProjectId);
+
+        if (alertRuleForm.editingId === rule.id) {
+          resetAlertRuleForm();
+        }
+
+        setFlashMessage(`Alert rule "${rule.name}" deleted.`);
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert rule deletion failed.");
+      }
+    });
+  };
+
+  const handleMarkAlertRead = (item: AlertInboxItem) => {
+    if (!token || item.read_at) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await apiRequest<{ data: AlertInboxItem }>(
+          `/alerts/inbox/${item.id}/read`,
+          {
+            method: "PATCH",
+          },
+          token,
+        );
+
+        setAlertInbox((current) =>
+          current.map((entry) =>
+            entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry,
+          ),
+        );
+        setProfile((current) =>
+          current
+            ? {
+                ...current,
+                counts: {
+                  ...current.counts,
+                  unread_alerts: Math.max(0, current.counts.unread_alerts - 1),
+                },
+              }
+            : current,
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : "Alert read state could not be updated.");
       }
     });
   };
@@ -1652,6 +2208,24 @@ export function IqxIntelligenceApp() {
   const overviewCards = buildOverviewCards(mentions);
   const analyticsMetrics = buildAnalyticsMetrics(mentions);
   const dashboardCards = buildDashboardCards(currentProject, trackedKeywords.length);
+  const alertSourceOptions = [
+    { value: "media", label: "Media" },
+    { value: "reddit", label: "Reddit" },
+    { value: "x", label: "X" },
+  ];
+  const selectedAlertChannelOption = alertChannelTypeOptions.find(
+    (option) => option.value === alertChannelForm.type,
+  );
+  const alertDestinationLabel =
+    alertChannelForm.type === "email"
+      ? "Recipient email"
+      : alertChannelForm.type === "telegram"
+        ? "Telegram chat id"
+        : ["sms", "whatsapp"].includes(alertChannelForm.type)
+          ? "Recipient phone number"
+          : alertChannelForm.type === "in_app"
+            ? "Destination"
+            : "Webhook URL";
   const isProfileDirty =
     profileForm.name.trim() !== (profile?.name ?? "") ||
     profileForm.email.trim() !== (profile?.email ?? "") ||
@@ -1659,6 +2233,10 @@ export function IqxIntelligenceApp() {
     profileForm.passwordConfirmation.trim() !== "";
   const workspaceTabs: { key: WorkspaceTab; label: string }[] = [
     { key: "results", label: "Mentions" },
+    {
+      key: "alerts",
+      label: `Alerts${profile?.counts.unread_alerts ? ` (${profile.counts.unread_alerts})` : ""}`,
+    },
     { key: "analysis", label: "Analytics" },
     { key: "sources", label: "Influencers & Sources" },
     ...(isAdmin ? [{ key: "articles" as WorkspaceTab, label: "All Captured Articles" }] : []),
@@ -1686,6 +2264,12 @@ export function IqxIntelligenceApp() {
       title: "Analytics",
       description:
         "Track mentions, estimated reach, tone, and source performance in a customer-friendly monitoring view.",
+    },
+    alerts: {
+      eyebrow: "Active view",
+      title: "Alert routing",
+      description:
+        "Connect inbox, email, chat, webhook, and mobile delivery channels, then define project rules for instant or digest notifications.",
     },
     sources: {
       eyebrow: "Active view",
@@ -2012,9 +2596,29 @@ export function IqxIntelligenceApp() {
                     <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                       Workspace
                     </p>
-                    <h3 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
-                      {profile.name}
-                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setActiveWorkspaceTab("profile")}
+                      className="mt-2 inline-flex items-center gap-2 text-left text-3xl font-semibold tracking-[-0.04em] text-stone-950 transition-colors hover:text-stone-600"
+                      aria-label="Open profile settings"
+                    >
+                      <span>{profile.name}</span>
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-stone-50 text-stone-500 transition-colors hover:border-stone-300 hover:text-stone-700">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </span>
+                    </button>
                     <p className="mt-2 text-sm text-stone-500">{profile.email}</p>
                   </div>
                   <span className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50">
@@ -2472,6 +3076,660 @@ export function IqxIntelligenceApp() {
                   </article>
 
                 </div>
+              ) : null}
+
+              {activeWorkspaceTab === "alerts" ? (
+                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <section className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Delivery channels
+                      </p>
+                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                        Route alerts anywhere
+                      </h3>
+                      <p className="mt-3 text-sm leading-6 text-stone-500">
+                        Configure inbox, email, chat, webhook, and mobile destinations. IQX will use these channels from project-level alert rules.
+                      </p>
+
+                      <div className="mt-5 grid gap-4 md:grid-cols-2">
+                        <label className="text-sm font-medium text-stone-700">
+                          Channel type
+                          <select
+                            className={inputClassName}
+                            value={alertChannelForm.type}
+                            onChange={(event) =>
+                              setAlertChannelForm((current) => ({
+                                ...current,
+                                type: event.target.value,
+                                destination: event.target.value === "in_app" ? "" : current.destination,
+                              }))
+                            }
+                          >
+                            {alertChannelTypeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="mt-2 block text-sm font-normal text-stone-500">
+                            {selectedAlertChannelOption?.hint}
+                          </span>
+                        </label>
+
+                        <label className="text-sm font-medium text-stone-700">
+                          Channel name
+                          <input
+                            className={inputClassName}
+                            value={alertChannelForm.name}
+                            onChange={(event) =>
+                              setAlertChannelForm((current) => ({
+                                ...current,
+                                name: event.target.value,
+                              }))
+                            }
+                            placeholder="Executive inbox"
+                          />
+                        </label>
+
+                        {alertChannelForm.type !== "in_app" ? (
+                          <label className="text-sm font-medium text-stone-700 md:col-span-2">
+                            {alertDestinationLabel}
+                            <input
+                              className={inputClassName}
+                              value={alertChannelForm.destination}
+                              onChange={(event) =>
+                                setAlertChannelForm((current) => ({
+                                  ...current,
+                                  destination: event.target.value,
+                                }))
+                              }
+                              placeholder={
+                                ["slack", "teams", "discord", "webhook"].includes(alertChannelForm.type)
+                                  ? "https://hooks.example.com/..."
+                                  : alertChannelForm.type === "email"
+                                    ? "alerts@company.com"
+                                    : alertChannelForm.type === "telegram"
+                                      ? "123456789"
+                                      : "+15551234567"
+                              }
+                            />
+                          </label>
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-4 text-sm text-stone-500 md:col-span-2">
+                            In-app delivery stores alerts in the workspace inbox automatically. No external destination is required.
+                          </div>
+                        )}
+
+                        {alertChannelForm.type === "telegram" ? (
+                          <label className="text-sm font-medium text-stone-700 md:col-span-2">
+                            Telegram bot token
+                            <input
+                              className={inputClassName}
+                              value={alertChannelForm.botToken}
+                              onChange={(event) =>
+                                setAlertChannelForm((current) => ({
+                                  ...current,
+                                  botToken: event.target.value,
+                                }))
+                              }
+                              placeholder="123456:ABCDEF..."
+                            />
+                          </label>
+                        ) : null}
+
+                        {["sms", "whatsapp"].includes(alertChannelForm.type) ? (
+                          <>
+                            <label className="text-sm font-medium text-stone-700">
+                              Twilio account SID
+                              <input
+                                className={inputClassName}
+                                value={alertChannelForm.accountSid}
+                                onChange={(event) =>
+                                  setAlertChannelForm((current) => ({
+                                    ...current,
+                                    accountSid: event.target.value,
+                                  }))
+                                }
+                                placeholder="AC..."
+                              />
+                            </label>
+
+                            <label className="text-sm font-medium text-stone-700">
+                              Twilio auth token
+                              <input
+                                className={inputClassName}
+                                value={alertChannelForm.authToken}
+                                onChange={(event) =>
+                                  setAlertChannelForm((current) => ({
+                                    ...current,
+                                    authToken: event.target.value,
+                                  }))
+                                }
+                                placeholder="Auth token"
+                              />
+                            </label>
+
+                            <label className="text-sm font-medium text-stone-700 md:col-span-2">
+                              Twilio from number
+                              <input
+                                className={inputClassName}
+                                value={alertChannelForm.fromNumber}
+                                onChange={(event) =>
+                                  setAlertChannelForm((current) => ({
+                                    ...current,
+                                    fromNumber: event.target.value,
+                                  }))
+                                }
+                                placeholder={
+                                  alertChannelForm.type === "whatsapp"
+                                    ? "whatsapp:+14155238886"
+                                    : "+15557654321"
+                                }
+                              />
+                            </label>
+                          </>
+                        ) : null}
+
+                        <label className="flex items-center gap-3 rounded-[1.2rem] border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700 md:col-span-2">
+                          <input
+                            type="checkbox"
+                            checked={alertChannelForm.isActive}
+                            onChange={(event) =>
+                              setAlertChannelForm((current) => ({
+                                ...current,
+                                isActive: event.target.checked,
+                              }))
+                            }
+                          />
+                          Active and available for rules
+                        </label>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={handleSaveAlertChannel}
+                          disabled={
+                            isPending ||
+                            !alertChannelForm.name.trim() ||
+                            (alertChannelForm.type !== "in_app" && !alertChannelForm.destination.trim())
+                          }
+                          className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {alertChannelForm.editingId ? "Save channel" : "Add channel"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetAlertChannelForm}
+                          className="rounded-full border border-stone-300 px-6 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                        >
+                          Reset
+                        </button>
+                      </div>
+
+                      <div className="mt-5 space-y-3">
+                        {alertChannels.length ? (
+                          alertChannels.map((channel) => (
+                            <article
+                              key={channel.id}
+                              className="rounded-[1.2rem] border border-stone-200 bg-white p-4"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <strong className="text-base font-semibold text-stone-900">
+                                      {channel.name}
+                                    </strong>
+                                    <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+                                      {channel.type.replaceAll("_", " ")}
+                                    </span>
+                                    {!channel.is_active ? (
+                                      <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                                        paused
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-2 text-sm text-stone-500">
+                                    {channel.destination ?? "Workspace inbox"}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditAlertChannel(channel)}
+                                    className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleAlertChannel(channel)}
+                                    disabled={isPending}
+                                    className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {channel.is_active ? "Pause" : "Enable"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAlertChannel(channel)}
+                                    disabled={isPending}
+                                    className="rounded-full border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                            Add your first alert destination to start routing mentions.
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="grid gap-5">
+                      <article className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                              Project rules
+                            </p>
+                            <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                              {currentProject ? `Rules for ${currentProject.name}` : "Select a project"}
+                            </h3>
+                          </div>
+                          {currentProject ? (
+                            <span className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50">
+                              {projectAlertRules.length} rule{projectAlertRules.length === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {currentProject ? (
+                          <>
+                            <div className="mt-5 grid gap-4 md:grid-cols-2">
+                              <label className="text-sm font-medium text-stone-700">
+                                Rule name
+                                <input
+                                  className={inputClassName}
+                                  value={alertRuleForm.name}
+                                  onChange={(event) =>
+                                    setAlertRuleForm((current) => ({
+                                      ...current,
+                                      name: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Executive hot mentions"
+                                />
+                              </label>
+
+                              <label className="text-sm font-medium text-stone-700">
+                                Frequency
+                                <select
+                                  className={inputClassName}
+                                  value={alertRuleForm.frequency}
+                                  onChange={(event) =>
+                                    setAlertRuleForm((current) => ({
+                                      ...current,
+                                      frequency: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="instant">Instant</option>
+                                  <option value="hourly">Hourly digest</option>
+                                  <option value="daily">Daily digest</option>
+                                </select>
+                              </label>
+
+                              <label className="text-sm font-medium text-stone-700">
+                                Minimum estimated reach
+                                <input
+                                  className={inputClassName}
+                                  value={alertRuleForm.minReach}
+                                  onChange={(event) =>
+                                    setAlertRuleForm((current) => ({
+                                      ...current,
+                                      minReach: event.target.value.replaceAll(/[^\d]/g, ""),
+                                    }))
+                                  }
+                                  placeholder="15000"
+                                />
+                              </label>
+
+                              <label className="text-sm font-medium text-stone-700">
+                                Sentiment
+                                <select
+                                  className={inputClassName}
+                                  value={alertRuleForm.sentiment}
+                                  onChange={(event) =>
+                                    setAlertRuleForm((current) => ({
+                                      ...current,
+                                      sentiment: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="all">All tones</option>
+                                  <option value="positive">Positive only</option>
+                                  <option value="neutral">Neutral only</option>
+                                  <option value="negative">Negative only</option>
+                                </select>
+                              </label>
+
+                              <div className="rounded-[1.2rem] border border-stone-200 bg-white p-4 md:col-span-2">
+                                <p className="text-sm font-medium text-stone-700">Source filters</p>
+                                <div className="mt-3 flex flex-wrap gap-3">
+                                  {alertSourceOptions.map((option) => (
+                                    <label
+                                      key={option.value}
+                                      className="flex items-center gap-2 rounded-full border border-stone-200 px-3 py-2 text-sm text-stone-700"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={alertRuleForm.sourceFilters.includes(option.value)}
+                                        onChange={(event) =>
+                                          setAlertRuleForm((current) => ({
+                                            ...current,
+                                            sourceFilters: event.target.checked
+                                              ? [...current.sourceFilters, option.value]
+                                              : current.sourceFilters.filter((value) => value !== option.value),
+                                          }))
+                                        }
+                                      />
+                                      {option.label}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="rounded-[1.2rem] border border-stone-200 bg-white p-4">
+                                <p className="text-sm font-medium text-stone-700">Tracked keywords</p>
+                                <div className="mt-3 space-y-2">
+                                  {trackedKeywords.length ? (
+                                    trackedKeywords.map((keyword) => (
+                                      <label
+                                        key={keyword.id}
+                                        className="flex items-center gap-2 text-sm text-stone-700"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={alertRuleForm.trackedKeywordIds.includes(keyword.id)}
+                                          onChange={(event) =>
+                                            setAlertRuleForm((current) => ({
+                                              ...current,
+                                              trackedKeywordIds: event.target.checked
+                                                ? [...current.trackedKeywordIds, keyword.id]
+                                                : current.trackedKeywordIds.filter((id) => id !== keyword.id),
+                                            }))
+                                          }
+                                        />
+                                        {keyword.keyword}
+                                      </label>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-stone-500">
+                                      Add tracked keywords before scoping rules to specific terms.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="rounded-[1.2rem] border border-stone-200 bg-white p-4">
+                                <p className="text-sm font-medium text-stone-700">Delivery channels</p>
+                                <div className="mt-3 space-y-2">
+                                  {alertChannels.length ? (
+                                    alertChannels.map((channel) => (
+                                      <label
+                                        key={channel.id}
+                                        className="flex items-center gap-2 text-sm text-stone-700"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={alertRuleForm.channelIds.includes(channel.id)}
+                                          onChange={(event) =>
+                                            setAlertRuleForm((current) => ({
+                                              ...current,
+                                              channelIds: event.target.checked
+                                                ? [...current.channelIds, channel.id]
+                                                : current.channelIds.filter((id) => id !== channel.id),
+                                            }))
+                                          }
+                                        />
+                                        {channel.name}{" "}
+                                        <span className="text-stone-400">({channel.type})</span>
+                                      </label>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-stone-500">
+                                      Add at least one delivery channel before creating a rule.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <label className="flex items-center gap-3 rounded-[1.2rem] border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700 md:col-span-2">
+                                <input
+                                  type="checkbox"
+                                  checked={alertRuleForm.isActive}
+                                  onChange={(event) =>
+                                    setAlertRuleForm((current) => ({
+                                      ...current,
+                                      isActive: event.target.checked,
+                                    }))
+                                  }
+                                />
+                                Rule is active
+                              </label>
+                            </div>
+
+                            <div className="mt-5 flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                onClick={handleSaveAlertRule}
+                                disabled={
+                                  isPending ||
+                                  !alertRuleForm.name.trim() ||
+                                  !alertRuleForm.channelIds.length
+                                }
+                                className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {alertRuleForm.editingId ? "Save rule" : "Add rule"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={resetAlertRuleForm}
+                                className="rounded-full border border-stone-300 px-6 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                              >
+                                Reset
+                              </button>
+                            </div>
+
+                            <div className="mt-5 space-y-3">
+                              {projectAlertRules.length ? (
+                                projectAlertRules.map((rule) => (
+                                  <article
+                                    key={rule.id}
+                                    className="rounded-[1.2rem] border border-stone-200 bg-white p-4"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <strong className="text-base font-semibold text-stone-900">
+                                            {rule.name}
+                                          </strong>
+                                          <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-500">
+                                            {rule.frequency}
+                                          </span>
+                                          {!rule.is_active ? (
+                                            <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                                              paused
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
+                                          {rule.min_reach ? (
+                                            <span className="rounded-full bg-stone-100 px-3 py-1">
+                                              min reach {formatCompactNumber(rule.min_reach)}
+                                            </span>
+                                          ) : null}
+                                          <span className="rounded-full bg-stone-100 px-3 py-1">
+                                            sentiment {rule.sentiment ?? "all"}
+                                          </span>
+                                          <span className="rounded-full bg-stone-100 px-3 py-1">
+                                            {rule.channels.length} channel{rule.channels.length === 1 ? "" : "s"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleEditAlertRule(rule)}
+                                          className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAlertRule(rule)}
+                                          disabled={isPending}
+                                          className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                          {rule.is_active ? "Pause" : "Enable"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteAlertRule(rule)}
+                                          disabled={isPending}
+                                          className="rounded-full border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <p className="mt-3 text-sm text-stone-500">
+                                      Sources: {rule.source_filters.length ? rule.source_filters.join(", ") : "all"}
+                                      {" "} | Keywords: {rule.tracked_keyword_ids.length || "all"}
+                                    </p>
+                                  </article>
+                                ))
+                              ) : (
+                                <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                                  No alert rules yet for this project. Add one to control where fresh mentions go.
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="mt-5 rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-8 text-sm text-stone-500">
+                            Select a project first. Rules are scoped per project so each monitor can alert differently.
+                          </div>
+                        )}
+                      </article>
+
+                      <article className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                              Inbox
+                            </p>
+                            <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                              Recent in-app alerts
+                            </h3>
+                          </div>
+                          <span className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50">
+                            {profile?.counts.unread_alerts ?? 0} unread
+                          </span>
+                        </div>
+
+                        <div className="mt-5 space-y-3">
+                          {alertInbox.length ? (
+                            alertInbox.map((item) => (
+                              <article
+                                key={item.id}
+                                className={`rounded-[1.2rem] border p-4 ${
+                                  item.read_at
+                                    ? "border-stone-200 bg-white"
+                                    : "border-blue-200 bg-blue-50/70"
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <strong className="text-base font-semibold text-stone-900">
+                                        {item.subject ?? "Alert"}
+                                      </strong>
+                                      {!item.read_at ? (
+                                        <span className="rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+                                          unread
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="mt-2 text-sm leading-6 text-stone-500">
+                                      {item.body}
+                                    </p>
+                                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+                                      {item.rule?.project_name ? (
+                                        <span className="rounded-full bg-stone-100 px-3 py-1">
+                                          {item.rule.project_name}
+                                        </span>
+                                      ) : null}
+                                      {item.mention?.tracked_keyword?.keyword ? (
+                                        <span className="rounded-full bg-stone-100 px-3 py-1">
+                                          {item.mention.tracked_keyword.keyword}
+                                        </span>
+                                      ) : null}
+                                      <span className="rounded-full bg-stone-100 px-3 py-1">
+                                        {item.mention?.source ?? item.channel?.name ?? "inbox"}
+                                      </span>
+                                      <span className="rounded-full bg-stone-100 px-3 py-1">
+                                        {formatPublishedAt(item.delivered_at)}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-2">
+                                    {!item.read_at ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMarkAlertRead(item)}
+                                        disabled={isPending}
+                                        className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Mark read
+                                      </button>
+                                    ) : null}
+                                    {item.mention?.url ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          window.open(
+                                            item.mention?.url ?? "",
+                                            "_blank",
+                                            "noopener,noreferrer",
+                                          )
+                                        }
+                                        className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                                      >
+                                        Open source
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </article>
+                            ))
+                          ) : (
+                            <div className="rounded-[1.2rem] border border-dashed border-stone-200 bg-white px-4 py-6 text-sm text-stone-500">
+                              In-app notifications will land here once new mentions match your rules.
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    </section>
+                  </div>
+                </article>
               ) : null}
 
               {activeWorkspaceTab === "analysis" ? (
@@ -3327,27 +4585,33 @@ export function IqxIntelligenceApp() {
                     New project
                   </p>
                   <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                    Launch a new monitor
+                    Enter keywords or key phrases
                   </h3>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
+                    Add comma-separated keywords to monitor. IQX will name the project from the first keyword and set up the rest as tracked terms automatically.
+                  </p>
 
                   <div className="mt-5 grid gap-4">
                     <label className="text-sm font-medium text-stone-700">
-                      Project name
-                      <input
-                        className={inputClassName}
-                        value={projectForm.name}
+                      Keywords / key phrases
+                      <textarea
+                        className={`${inputClassName} min-h-28 resize-none`}
+                        value={projectForm.keywords}
                         onChange={(event) =>
                           setProjectForm((current) => ({
                             ...current,
-                            name: event.target.value,
+                            keywords: event.target.value,
                           }))
                         }
-                        placeholder="Port congestion watch"
+                        placeholder="SeaLead, Red Sea disruption, container rates"
                       />
+                      <span className="mt-2 block text-sm font-normal text-stone-500">
+                        Type comma-separated phrases to monitor.
+                      </span>
                     </label>
 
                     <label className="text-sm font-medium text-stone-700">
-                      Target audience
+                      Audience
                       <input
                         className={inputClassName}
                         value={projectForm.audience}
@@ -3362,7 +4626,7 @@ export function IqxIntelligenceApp() {
                     </label>
 
                     <label className="text-sm font-medium text-stone-700">
-                      Context
+                      Monitoring brief
                       <textarea
                         className={`${inputClassName} min-h-28 resize-none`}
                         value={projectForm.description}
@@ -3380,10 +4644,10 @@ export function IqxIntelligenceApp() {
                       <button
                         type="button"
                         onClick={handleCreateProject}
-                        disabled={isPending || !projectForm.name.trim()}
+                        disabled={isPending || !parseKeywordList(projectForm.keywords).length}
                         className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        Create project
+                        Create monitor
                       </button>
                       <button
                         type="button"

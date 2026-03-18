@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\EvaluateMentionAlertsJob;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -40,5 +41,12 @@ class Mention extends Model
     public function trackedKeyword(): BelongsTo
     {
         return $this->belongsTo(TrackedKeyword::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (Mention $mention): void {
+            EvaluateMentionAlertsJob::dispatch($mention->id)->afterCommit();
+        });
     }
 }

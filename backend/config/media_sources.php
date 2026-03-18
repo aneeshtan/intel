@@ -8,7 +8,9 @@ return [
     'connect_timeout_seconds' => env('MEDIA_HTTP_CONNECT_TIMEOUT_SECONDS', 3),
     'archive_lookback_days' => env('MEDIA_ARCHIVE_LOOKBACK_DAYS', 90),
     'archive_article_limit_per_source' => env('MEDIA_ARCHIVE_ARTICLE_LIMIT_PER_SOURCE', 80),
+    'discovery_article_limit_per_source' => env('MEDIA_DISCOVERY_ARTICLE_LIMIT_PER_SOURCE', 20),
     'archive_sitemap_limit_per_source' => env('MEDIA_ARCHIVE_SITEMAP_LIMIT_PER_SOURCE', 12),
+    'repair_sync_lookback_days' => env('MEDIA_REPAIR_SYNC_LOOKBACK_DAYS', 2),
     'user_agent' => env(
         'MEDIA_HTTP_USER_AGENT',
         'IQX Intelligence Feed Monitor/1.0 (+https://iqxintel.local)'

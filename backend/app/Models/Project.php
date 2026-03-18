@@ -49,6 +49,11 @@ class Project extends Model
         return $this->hasMany(MutedEntity::class);
     }
 
+    public function alertRules(): HasMany
+    {
+        return $this->hasMany(AlertRule::class);
+    }
+
     public static function uniqueSlugForUser(int $userId, string $name, ?int $ignoreId = null): string
     {
         $baseSlug = Str::slug($name) ?: 'project';

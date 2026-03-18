@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\FetchMediaArticleJob;
 use App\Models\MediaArticle;
 use App\Models\Mention;
 use App\Models\MutedEntity;
@@ -55,6 +56,123 @@ class MediaMentionIngestionService
         }
 
         return $stored;
+    }
+
+    public function queueNewArticleFetches(?int $lookbackDays = null, bool $force = false): int
+    {
+        $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
+        $since = now()->subDays($lookbackDays)->startOfDay();
+        $sources = collect(config('media_sources.sources', []));
+
+        if ($sources->isEmpty()) {
+            return 0;
+        }
+
+        $queued = 0;
+        $limit = (int) config('media_sources.discovery_article_limit_per_source', 20);
+
+        foreach ($sources as $source) {
+            $candidates = $this->discoverArchiveCandidates($source, $since);
+
+            foreach ($candidates->take($limit) as $candidate) {
+                if (! $this->shouldQueueArticleCandidate($source, $candidate, $since, $force)) {
+                    continue;
+                }
+
+                FetchMediaArticleJob::dispatch(
+                    $source,
+                    $this->serializeCandidateForQueue($candidate),
+                    $lookbackDays,
+                    $force,
+                );
+                $queued++;
+            }
+        }
+
+        return $queued;
+    }
+
+    public function fetchAndStoreArticleCandidate(
+        array $source,
+        array $candidate,
+        ?int $lookbackDays = null,
+        bool $force = false
+    ): ?MediaArticle {
+        $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
+        $since = now()->subDays($lookbackDays)->startOfDay();
+
+        return $this->storeArticleForCandidate($source, $candidate, $since, $force);
+    }
+
+    public function syncMentionsForArticle(MediaArticle $article): int
+    {
+        $inserted = 0;
+        $articleText = trim($article->title.' '.$article->body);
+
+        TrackedKeyword::query()
+            ->where('is_active', true)
+            ->whereIn('platform', ['all', 'media'])
+            ->with(['project.mutedEntities'])
+            ->chunkById(100, function (Collection $keywords) use (&$inserted, $article, $articleText): void {
+                foreach ($keywords as $keyword) {
+                    $project = $keyword->project;
+
+                    if (! $project) {
+                        continue;
+                    }
+
+                    if (! $this->matchesKeyword($keyword, $articleText)) {
+                        continue;
+                    }
+
+                    if ($this->isMutedForProject($project, $article->url, $article->author_name)) {
+                        continue;
+                    }
+
+                    $this->deleteDemoMentions($project, $keyword);
+
+                    $mention = Mention::query()->firstOrCreate(
+                        [
+                            'source' => 'media',
+                            'external_id' => sha1(implode('|', [
+                                $project->id,
+                                $keyword->id,
+                                $article->source_key,
+                                $article->external_id,
+                            ])),
+                        ],
+                        [
+                            'project_id' => $project->id,
+                            'tracked_keyword_id' => $keyword->id,
+                            'author_name' => $article->author_name ?: $article->source_name,
+                            'url' => $article->url,
+                            'title' => $article->title,
+                            'body' => $article->body,
+                            'sentiment' => 'neutral',
+                            'published_at' => $article->published_at,
+                            'metadata' => [
+                                'source_key' => $article->source_key,
+                                'source_name' => $article->source_name,
+                                'source_url' => $article->source_url,
+                                'source_domain' => $this->normalizeSourceValue(
+                                    parse_url((string) $article->url, PHP_URL_HOST)
+                                ),
+                                'article_id' => $article->id,
+                                'demo' => false,
+                                'archived' => true,
+                            ],
+                        ],
+                    );
+
+                    if ($mention->wasRecentlyCreated) {
+                        $inserted++;
+                    }
+
+                    $this->markProjectKeywordSynced($project, $keyword);
+                }
+            });
+
+        return $inserted;
     }
 
     public function syncProjectMentionsFromArchive(
@@ -157,63 +275,82 @@ class MediaMentionIngestionService
         $limit = (int) config('media_sources.archive_article_limit_per_source', 80);
 
         foreach ($candidates->take($limit) as $candidate) {
-            $externalId = sha1($candidate['url']);
+            $record = $this->storeArticleForCandidate($source, $candidate, $since, $force);
 
-            $existing = MediaArticle::query()
-                ->where('source_key', $source['key'])
-                ->where('external_id', $externalId)
-                ->first();
-
-            if (
-                ! $force
-                && $existing
-                && $existing->updated_at
-                && $existing->updated_at->gt(now()->subHours(24))
-            ) {
-                continue;
-            }
-
-            $article = $this->fetchArticle($source, $candidate['url'], $candidate['published_at'] ?? null);
-
-            if (! $article) {
-                continue;
-            }
-
-            $publishedAt = $article['published_at'] ?? $candidate['published_at'] ?? null;
-
-            if ($publishedAt && $publishedAt->lt($since)) {
-                continue;
-            }
-
-            $record = $existing ?: new MediaArticle([
-                'source_key' => $source['key'],
-                'external_id' => $externalId,
-            ]);
-
-            $record->fill([
-                'source_name' => $source['name'],
-                'source_url' => $source['homepage'],
-                'url' => $candidate['url'],
-                'author_name' => $article['author'] ?? null,
-                'title' => $article['title'],
-                'body' => $article['body'],
-                'published_at' => $publishedAt,
-                'metadata' => [
-                    'feed_url' => $candidate['feed_url'] ?? null,
-                    'lastmod' => isset($candidate['published_at']) ? $candidate['published_at']?->toIso8601String() : null,
-                    'backfilled_at' => now()->toIso8601String(),
-                ],
-            ]);
-
-            $isNew = ! $record->exists;
-            $record->save();
-
-            if ($isNew) {
+            if ($record && $record->wasRecentlyCreated) {
                 $stored++;
             }
         }
 
         return $stored;
+    }
+
+    private function storeArticleForCandidate(
+        array $source,
+        array $candidate,
+        Carbon $since,
+        bool $force
+    ): ?MediaArticle {
+        $url = trim((string) ($candidate['url'] ?? ''));
+
+        if ($url === '') {
+            return null;
+        }
+
+        $candidatePublishedAt = $this->candidatePublishedAt($candidate);
+        $externalId = sha1($url);
+
+        $existing = MediaArticle::query()
+            ->where('source_key', $source['key'])
+            ->where('external_id', $externalId)
+            ->first();
+
+        if (
+            ! $force
+            && $existing
+            && $existing->updated_at
+            && $existing->updated_at->gt(now()->subHours(24))
+            && ! ($candidatePublishedAt && (! $existing->published_at || $candidatePublishedAt->gt($existing->published_at)))
+        ) {
+            return null;
+        }
+
+        $article = $this->fetchArticle($source, $url, $candidatePublishedAt);
+
+        if (! $article) {
+            return null;
+        }
+
+        $publishedAt = $article['published_at'] ?? $candidatePublishedAt;
+
+        if ($publishedAt && $publishedAt->lt($since)) {
+            return null;
+        }
+
+        $record = $existing ?: new MediaArticle([
+            'source_key' => $source['key'],
+            'external_id' => $externalId,
+        ]);
+
+        $record->fill([
+            'source_name' => $source['name'],
+            'source_url' => $source['homepage'],
+            'url' => $url,
+            'author_name' => $article['author'] ?? null,
+            'title' => $article['title'],
+            'body' => $article['body'],
+            'published_at' => $publishedAt,
+            'metadata' => [
+                ...((array) $record->metadata),
+                'feed_url' => $candidate['feed_url'] ?? null,
+                'lastmod' => $candidatePublishedAt?->toIso8601String(),
+                'backfilled_at' => now()->toIso8601String(),
+            ],
+        ]);
+
+        $record->save();
+
+        return $record;
     }
 
     private function discoverArchiveCandidates(array $source, Carbon $since): Collection
@@ -379,6 +516,68 @@ class MediaMentionIngestionService
         }
 
         return $this->extractArticleFromHtml($response->body(), $fallbackPublishedAt);
+    }
+
+    private function shouldQueueArticleCandidate(
+        array $source,
+        array $candidate,
+        Carbon $since,
+        bool $force
+    ): bool {
+        $url = trim((string) ($candidate['url'] ?? ''));
+
+        if ($url === '') {
+            return false;
+        }
+
+        $publishedAt = $this->candidatePublishedAt($candidate);
+
+        if ($publishedAt && $publishedAt->lt($since)) {
+            return false;
+        }
+
+        if ($force) {
+            return true;
+        }
+
+        $existing = MediaArticle::query()
+            ->where('source_key', $source['key'])
+            ->where('external_id', sha1($url))
+            ->first(['published_at', 'updated_at']);
+
+        if (! $existing) {
+            return true;
+        }
+
+        if ($publishedAt && (! $existing->published_at || $publishedAt->gt($existing->published_at))) {
+            return true;
+        }
+
+        return ! $existing->updated_at || $existing->updated_at->lte(now()->subHours(24));
+    }
+
+    private function serializeCandidateForQueue(array $candidate): array
+    {
+        return [
+            'url' => (string) ($candidate['url'] ?? ''),
+            'feed_url' => $candidate['feed_url'] ?? null,
+            'published_at' => $this->candidatePublishedAt($candidate)?->toIso8601String(),
+        ];
+    }
+
+    private function candidatePublishedAt(array $candidate): ?Carbon
+    {
+        $publishedAt = $candidate['published_at'] ?? null;
+
+        if ($publishedAt instanceof Carbon) {
+            return $publishedAt;
+        }
+
+        if (is_string($publishedAt) && $publishedAt !== '') {
+            return $this->parseDate($publishedAt);
+        }
+
+        return null;
     }
 
     private function extractArticleFromHtml(string $html, ?Carbon $fallbackPublishedAt): ?array

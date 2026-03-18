@@ -25,7 +25,7 @@ class UsersTableSeeder extends Seeder
             $newUser = config('roles.models.defaultUser')::create([
                 'name'     => 'Admin',
                 'email'    => 'admin@admin.com',
-                'password' => bcrypt('password'),
+                'password' => bcrypt('admin'),
             ]);
 
             $newUser->attachRole($adminRole);

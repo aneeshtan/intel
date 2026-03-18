@@ -8,9 +8,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use jeremykenedy\LaravelRoles\Traits\HasRoleAndPermission;
 use Laravel\Cashier\Billable;
 use Laravel\Sanctum\HasApiTokens;
-use jeremykenedy\LaravelRoles\Traits\HasRoleAndPermission;
 
 class User extends Authenticatable
 {
@@ -56,6 +56,21 @@ class User extends Authenticatable
         return $this->hasMany(Project::class);
     }
 
+    public function alertChannels(): HasMany
+    {
+        return $this->hasMany(AlertChannel::class);
+    }
+
+    public function alertRules(): HasMany
+    {
+        return $this->hasMany(AlertRule::class);
+    }
+
+    public function alertDeliveries(): HasMany
+    {
+        return $this->hasMany(AlertDelivery::class);
+    }
+
     public function activePlan(): ?Plan
     {
         if ($this->hasRole('admin')) {
@@ -79,7 +94,7 @@ class User extends Authenticatable
         return Plan::query()
             ->where('stripe_price_id', $priceId)
             ->orWhere('slug', 'starter')
-            ->orderByRaw("case when stripe_price_id = ? then 0 else 1 end", [$priceId])
+            ->orderByRaw('case when stripe_price_id = ? then 0 else 1 end', [$priceId])
             ->first();
     }
 

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AlertChannel;
+use App\Models\AlertDelivery;
 use App\Models\TrackedKeyword;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -73,6 +75,12 @@ class ProfileController extends Controller
                 'projects' => $user->projects()->count(),
                 'keywords' => TrackedKeyword::query()
                     ->whereHas('project', fn ($query) => $query->where('user_id', $user->id))
+                    ->count(),
+                'unread_alerts' => AlertDelivery::query()
+                    ->where('user_id', $user->id)
+                    ->whereNull('read_at')
+                    ->where('status', 'sent')
+                    ->whereHas('alertChannel', fn ($query) => $query->where('type', AlertChannel::TYPE_IN_APP))
                     ->count(),
             ],
         ];
