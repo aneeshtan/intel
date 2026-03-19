@@ -256,6 +256,8 @@ type AdminRefreshPhase = "idle" | "starting" | "polling" | "active" | "stalled" 
 type AdminRefreshState = {
   phase: AdminRefreshPhase;
   started_at: string | null;
+  source_key: string | null;
+  source_name: string | null;
   poll_attempt: number;
   max_polls: number;
   baseline_article_count: number;
@@ -450,6 +452,8 @@ function createAdminRefreshState(): AdminRefreshState {
   return {
     phase: "idle",
     started_at: null,
+    source_key: null,
+    source_name: null,
     poll_attempt: 0,
     max_polls: 12,
     baseline_article_count: 0,
@@ -2552,7 +2556,9 @@ export function IqxIntelligenceApp() {
     });
   };
 
-  const handleAdminCaptureMentions = () => {
+  const handleAdminCaptureMentions = (
+    source?: Pick<MediaCoverage["sources"][number], "key" | "name">,
+  ) => {
     if (!token) {
       return;
     }
@@ -2569,6 +2575,8 @@ export function IqxIntelligenceApp() {
         setAdminRefreshState({
           phase: "starting",
           started_at: startedAt,
+          source_key: source?.key ?? null,
+          source_name: source?.name ?? null,
           poll_attempt: 0,
           max_polls: maxPolls,
           baseline_article_count: baselineArticleCount,
@@ -2577,10 +2585,12 @@ export function IqxIntelligenceApp() {
           current_indexed_sources: baselineIndexedSources,
           latest_article_title: baselineLatestArticle?.title ?? null,
           latest_article_published_at: baselineLatestArticle?.published_at ?? null,
-          message: "Queueing refresh for news, Reddit, and X.",
+          message: source
+            ? `Queueing index for ${source.name}.`
+            : "Queueing refresh for news, Reddit, and X.",
         });
         const response = await apiRequest<{
-          data: { projects_processed: number; capture_started: boolean };
+          data: { projects_processed: number; capture_started: boolean; source_key?: string | null };
           message: string;
         }>(
           "/admin/media-capture",
@@ -2588,6 +2598,7 @@ export function IqxIntelligenceApp() {
             method: "POST",
             body: JSON.stringify({
               project_id: selectedProjectId,
+              source_key: source?.key ?? null,
               force: true,
               days: 90,
             }),
@@ -2628,6 +2639,8 @@ export function IqxIntelligenceApp() {
             latestState = {
               phase: activityDetected ? "active" : "polling",
               started_at: startedAt,
+              source_key: source?.key ?? null,
+              source_name: source?.name ?? null,
               poll_attempt: attempt,
               max_polls: maxPolls,
               baseline_article_count: baselineArticleCount,
@@ -2654,6 +2667,8 @@ export function IqxIntelligenceApp() {
             latestState = {
               phase: "stalled",
               started_at: startedAt,
+              source_key: source?.key ?? null,
+              source_name: source?.name ?? null,
               poll_attempt: maxPolls,
               max_polls: maxPolls,
               baseline_article_count: baselineArticleCount,
@@ -2676,8 +2691,12 @@ export function IqxIntelligenceApp() {
 
           setFlashMessage(
             archiveActivityDetected
-              ? "Refresh activity detected. Open Admin Center to monitor indexed sources and captured articles."
-              : "Refresh started. Open Admin Center to watch indexing progress.",
+              ? source
+                ? `${source.name} indexing activity detected. Open Admin Center to monitor that source.`
+                : "Refresh activity detected. Open Admin Center to monitor indexed sources and captured articles."
+              : source
+                ? `${source.name} indexing started. Open Admin Center to watch that source.`
+                : "Refresh started. Open Admin Center to watch indexing progress.",
           );
         } else {
           setFlashMessage(response.message);
@@ -2688,6 +2707,8 @@ export function IqxIntelligenceApp() {
         setAdminRefreshState((current) => ({
           ...current,
           phase: "error",
+          source_key: current.source_key ?? source?.key ?? null,
+          source_name: current.source_name ?? source?.name ?? null,
           message:
             error instanceof Error ? error.message : "Media capture could not be started.",
         }));
@@ -2872,6 +2893,9 @@ export function IqxIntelligenceApp() {
         );
   const isAdminRefreshRunning =
     adminRefreshState.phase === "starting" || adminRefreshState.phase === "polling";
+  const adminRefreshScopeLabel = adminRefreshState.source_name
+    ? `Target: ${adminRefreshState.source_name}`
+    : "Target: all enabled sources";
   const adminRefreshButtonLabel =
     adminRefreshState.phase === "starting"
       ? "Starting refresh..."
@@ -3625,7 +3649,7 @@ export function IqxIntelligenceApp() {
                         {isAdmin ? (
                           <button
                             type="button"
-                            onClick={handleAdminCaptureMentions}
+                            onClick={() => handleAdminCaptureMentions()}
                             disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
                             className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -4863,7 +4887,7 @@ export function IqxIntelligenceApp() {
                     {isAdmin ? (
                       <button
                         type="button"
-                        onClick={handleAdminCaptureMentions}
+                        onClick={() => handleAdminCaptureMentions()}
                         disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
                         className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -5170,7 +5194,7 @@ export function IqxIntelligenceApp() {
                         </span>
                         <button
                           type="button"
-                          onClick={handleAdminCaptureMentions}
+                          onClick={() => handleAdminCaptureMentions()}
                           disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
                           className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -5195,6 +5219,9 @@ export function IqxIntelligenceApp() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-stone-500">
+                      <span className="rounded-full bg-white px-3 py-1">
+                        {adminRefreshScopeLabel}
+                      </span>
                       <span className="rounded-full bg-white px-3 py-1">
                         Checks: {adminRefreshState.poll_attempt}/{adminRefreshState.max_polls}
                       </span>
@@ -5338,14 +5365,31 @@ export function IqxIntelligenceApp() {
                                     {source.notes}
                                   </p>
                                 </div>
-                                <a
-                                  href={source.homepage}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
-                                >
-                                  Open source
-                                </a>
+                                <div className="flex flex-wrap gap-2">
+                                  <a
+                                    href={source.homepage}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                                  >
+                                    Open source
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleAdminCaptureMentions({
+                                        key: source.key,
+                                        name: source.name,
+                                      })
+                                    }
+                                    disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
+                                    className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {isAdminRefreshRunning && adminRefreshState.source_key === source.key
+                                      ? "Indexing..."
+                                      : "Index now"}
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

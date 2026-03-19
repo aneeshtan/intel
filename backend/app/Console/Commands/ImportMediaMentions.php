@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 
 class ImportMediaMentions extends Command
 {
-    protected $signature = 'media:ingest {--project=} {--keyword=} {--force} {--days=}';
+    protected $signature = 'media:ingest {--project=} {--keyword=} {--force} {--days=} {--source=}';
 
     protected $description = 'Backfill maritime media archives and generate mentions for tracked keywords.';
 
@@ -19,6 +19,7 @@ class ImportMediaMentions extends Command
         $keywordId = $this->option('keyword');
         $force = (bool) $this->option('force');
         $lookbackDays = max(1, (int) ($this->option('days') ?: config('media_sources.archive_lookback_days', 90)));
+        $sourceKey = $this->option('source') ? (string) $this->option('source') : null;
 
         $projects = Project::query()
             ->when($projectId, fn ($query) => $query->whereKey($projectId))
@@ -35,7 +36,7 @@ class ImportMediaMentions extends Command
             return self::SUCCESS;
         }
 
-        $archived = $service->backfillRecentArticles($lookbackDays, $force);
+        $archived = $service->backfillRecentArticles($lookbackDays, $force, $sourceKey);
         $this->line("Archive backfill: {$archived} source articles stored.");
 
         $inserted = 0;

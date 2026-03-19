@@ -117,6 +117,74 @@ class AdminMediaCaptureTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_admin_can_trigger_single_source_index_from_api(): void
+    {
+        $this->seedBase();
+        Process::fake();
+
+        config()->set('media_sources.sources', [
+            [
+                'key' => 'the-loadstar',
+                'name' => 'The Loadstar',
+                'homepage' => 'https://theloadstar.com/',
+                'feed_url' => 'https://theloadstar.com/feed/',
+            ],
+        ]);
+
+        $admin = User::factory()->create();
+        $adminRole = config('roles.models.role')::query()->where('slug', 'admin')->first();
+        $admin->attachRole($adminRole);
+
+        $project = $admin->projects()->create([
+            'name' => 'Loadstar Watch',
+            'slug' => 'loadstar-watch',
+            'status' => 'active',
+            'monitored_platforms' => ['media'],
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/admin/media-capture', [
+            'project_id' => $project->id,
+            'source_key' => 'the-loadstar',
+            'force' => true,
+        ]);
+
+        $response
+            ->assertAccepted()
+            ->assertJsonPath('data.projects_processed', 1)
+            ->assertJsonPath('data.capture_started', true)
+            ->assertJsonPath('data.source_key', 'the-loadstar');
+
+        Process::assertRan(function ($pendingProcess) use ($project) {
+            $command = $pendingProcess->command;
+
+            if (is_array($command)) {
+                return $command === [
+                    'php',
+                    'artisan',
+                    'media:ingest',
+                    "--project={$project->id}",
+                    '--source=the-loadstar',
+                    '--force',
+                    '--days=90',
+                ];
+            }
+
+            return false;
+        });
+
+        Process::assertNotRan(function ($pendingProcess) {
+            $command = $pendingProcess->command;
+
+            if (is_array($command)) {
+                return in_array($command[2] ?? null, ['reddit:ingest', 'x:ingest'], true);
+            }
+
+            return false;
+        });
+    }
+
     private function seedBase(): void
     {
         $this->seed([

@@ -33,11 +33,15 @@ class MediaMentionIngestionService
         return $this->syncProjectMentionsFromArchive($project, $singleKeyword, $force, $lookbackDays);
     }
 
-    public function backfillRecentArticles(?int $lookbackDays = null, bool $force = false): int
+    public function backfillRecentArticles(
+        ?int $lookbackDays = null,
+        bool $force = false,
+        ?string $sourceKey = null
+    ): int
     {
         $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
         $since = now()->subDays($lookbackDays)->startOfDay();
-        $sources = collect(config('media_sources.sources', []));
+        $sources = $this->configuredSources($sourceKey);
 
         if ($sources->isEmpty()) {
             return 0;
@@ -46,7 +50,7 @@ class MediaMentionIngestionService
         $stored = 0;
 
         foreach ($sources as $source) {
-            if (! empty($source['disable_discovery'])) {
+            if ($sourceKey === null && ! empty($source['disable_discovery'])) {
                 continue;
             }
 
@@ -62,11 +66,15 @@ class MediaMentionIngestionService
         return $stored;
     }
 
-    public function queueNewArticleFetches(?int $lookbackDays = null, bool $force = false): int
+    public function queueNewArticleFetches(
+        ?int $lookbackDays = null,
+        bool $force = false,
+        ?string $sourceKey = null
+    ): int
     {
         $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
         $since = now()->subDays($lookbackDays)->startOfDay();
-        $sources = collect(config('media_sources.sources', []));
+        $sources = $this->configuredSources($sourceKey);
 
         if ($sources->isEmpty()) {
             return 0;
@@ -76,7 +84,7 @@ class MediaMentionIngestionService
         $limit = (int) config('media_sources.discovery_article_limit_per_source', 20);
 
         foreach ($sources as $source) {
-            if (! empty($source['disable_discovery'])) {
+            if ($sourceKey === null && ! empty($source['disable_discovery'])) {
                 continue;
             }
 
@@ -98,6 +106,11 @@ class MediaMentionIngestionService
         }
 
         return $queued;
+    }
+
+    public function hasConfiguredSource(string $sourceKey): bool
+    {
+        return $this->configuredSources($sourceKey)->isNotEmpty();
     }
 
     public function fetchAndStoreArticleCandidate(
@@ -291,6 +304,19 @@ class MediaMentionIngestionService
         }
 
         return $stored;
+    }
+
+    private function configuredSources(?string $sourceKey = null): Collection
+    {
+        $sources = collect(config('media_sources.sources', []));
+
+        if ($sourceKey === null || $sourceKey === '') {
+            return $sources->values();
+        }
+
+        return $sources
+            ->filter(fn (array $source): bool => ($source['key'] ?? null) === $sourceKey)
+            ->values();
     }
 
     private function storeArticleForCandidate(
