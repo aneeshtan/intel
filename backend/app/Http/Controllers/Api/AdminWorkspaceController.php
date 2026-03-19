@@ -7,11 +7,12 @@ use App\Models\Mention;
 use App\Models\Project;
 use App\Models\TrackedKeyword;
 use App\Models\User;
+use App\Services\AutoIndexingControlService;
 use Illuminate\Http\JsonResponse;
 
 class AdminWorkspaceController extends Controller
 {
-    public function __invoke(): JsonResponse
+    public function __invoke(AutoIndexingControlService $controlService): JsonResponse
     {
         /** @var User $user */
         $user = request()->user();
@@ -54,6 +55,9 @@ class AdminWorkspaceController extends Controller
                     'projects' => $projects->count(),
                     'keywords' => $keywords->count(),
                     'mentions' => Mention::query()->count(),
+                ],
+                'automation' => [
+                    'auto_indexing_paused' => $controlService->isPaused(),
                 ],
                 'projects' => $projects->map(fn (Project $project) => [
                     'id' => $project->id,

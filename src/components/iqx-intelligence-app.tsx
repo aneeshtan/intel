@@ -276,6 +276,9 @@ type AdminWorkspaceData = {
     keywords: number;
     mentions: number;
   };
+  automation: {
+    auto_indexing_paused: boolean;
+  };
   projects: {
     id: number;
     name: string;
@@ -1540,6 +1543,36 @@ export function IqxIntelligenceApp() {
     setAdminWorkspaceData(response.data);
   };
 
+  const updateAdminIndexingStatus = async (
+    authToken: string,
+    autoIndexingPaused: boolean,
+  ) => {
+    const response = await apiRequest<{ data: { auto_indexing_paused: boolean } }>(
+      "/admin/indexing-status",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          auto_indexing_paused: autoIndexingPaused,
+        }),
+      },
+      authToken,
+    );
+
+    setAdminWorkspaceData((current) =>
+      current
+        ? {
+            ...current,
+            automation: {
+              ...current.automation,
+              auto_indexing_paused: response.data.auto_indexing_paused,
+            },
+          }
+        : current,
+    );
+
+    return response.data;
+  };
+
   const loadCapturedArticles = async (
     authToken: string,
     page = 1,
@@ -2719,6 +2752,30 @@ export function IqxIntelligenceApp() {
     });
   };
 
+  const handleToggleAutoIndexing = () => {
+    if (!token || !adminWorkspaceData) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const nextPausedState = !adminWorkspaceData.automation.auto_indexing_paused;
+        const response = await updateAdminIndexingStatus(token, nextPausedState);
+
+        setFlashMessage(
+          response.auto_indexing_paused
+            ? "Auto indexing paused. Scheduled media discovery will stay off until you resume it."
+            : "Auto indexing resumed. Scheduled media discovery is live again.",
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(
+          error instanceof Error ? error.message : "Auto indexing status could not be updated.",
+        );
+      }
+    });
+  };
+
   const handleExportPdfReport = (
     reportMentions = filteredMentions,
     reportLabel = "Latest monitoring snapshot for the selected project.",
@@ -2896,6 +2953,7 @@ export function IqxIntelligenceApp() {
   const adminRefreshScopeLabel = adminRefreshState.source_name
     ? `Target: ${adminRefreshState.source_name}`
     : "Target: all enabled sources";
+  const autoIndexingPaused = adminWorkspaceData?.automation.auto_indexing_paused ?? false;
   const adminRefreshButtonLabel =
     adminRefreshState.phase === "starting"
       ? "Starting refresh..."
@@ -5186,12 +5244,29 @@ export function IqxIntelligenceApp() {
                           the latest captured article update while the background jobs run.
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap items-center justify-end gap-3">
                         <span
                           className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAdminRefreshPhaseClass(adminRefreshState.phase)}`}
                         >
                           {getAdminRefreshPhaseLabel(adminRefreshState.phase)}
                         </span>
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                            autoIndexingPaused
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          Auto indexing: {autoIndexingPaused ? "Paused" : "Live"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleToggleAutoIndexing}
+                          disabled={isPending || !adminWorkspaceData}
+                          className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {autoIndexingPaused ? "Resume auto indexing" : "Pause auto indexing"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleAdminCaptureMentions()}
@@ -5223,6 +5298,9 @@ export function IqxIntelligenceApp() {
                         {adminRefreshScopeLabel}
                       </span>
                       <span className="rounded-full bg-white px-3 py-1">
+                        Scheduler: {autoIndexingPaused ? "Paused" : "Running"}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1">
                         Checks: {adminRefreshState.poll_attempt}/{adminRefreshState.max_polls}
                       </span>
                       <span className="rounded-full bg-white px-3 py-1">
@@ -5241,7 +5319,17 @@ export function IqxIntelligenceApp() {
                       </span>
                     </div>
 
-                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <article className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Scheduler control
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-stone-600">
+                          {autoIndexingPaused
+                            ? "Scheduled media discovery and repair indexing are paused. Manual refresh and per-source indexing still work."
+                            : "Scheduled media discovery and repair indexing are running normally. Manual refresh and per-source indexing still work."}
+                        </p>
+                      </article>
                       <article className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Current status
