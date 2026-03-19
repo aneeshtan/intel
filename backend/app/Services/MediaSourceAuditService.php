@@ -111,6 +111,7 @@ class MediaSourceAuditService
                 'flaky_sources' => (int) ($summary['flaky'] ?? 0),
                 'broken_sources' => (int) ($summary['broken'] ?? 0),
                 'premium_risk_sources' => (int) ($summary['premium-risk'] ?? 0),
+                'unindexed_sources' => (int) ($summary['unindexed'] ?? 0),
                 'pending_sources' => (int) ($summary['pending'] ?? 0),
             ],
             'sources' => $rows->all(),
@@ -190,6 +191,14 @@ class MediaSourceAuditService
                     return false;
                 }
 
+                if (
+                    str_contains($line, ' testing.')
+                    || str_contains($line, 'example.test')
+                    || str_contains($line, 'feeds.example.test')
+                ) {
+                    return false;
+                }
+
                 try {
                     return CarbonImmutable::parse($matches['timestamp'])->gte($since);
                 } catch (\Throwable) {
@@ -218,12 +227,8 @@ class MediaSourceAuditService
             return 'premium-risk';
         }
 
-        if ($articleCount === 0 && $warningCount > 0) {
-            return 'broken';
-        }
-
         if ($articleCount === 0) {
-            return 'pending';
+            return 'unindexed';
         }
 
         if (! $latestPublishedAt || $latestPublishedAt->lt($windowStart) || $warningCount > 5) {
@@ -243,11 +248,11 @@ class MediaSourceAuditService
             return 'Likely needs licensed or authenticated access.';
         }
 
-        if ($articleCount === 0 && $warningCount > 0) {
-            return 'No stored coverage and repeated fetch or discovery failures.';
-        }
-
         if ($articleCount === 0) {
+            if ($warningCount > 0) {
+                return 'Configured, but still unindexed. Discovery failures have been recorded.';
+            }
+
             return 'Configured, but not indexed yet.';
         }
 
@@ -269,6 +274,7 @@ class MediaSourceAuditService
             'flaky' => 'Indexed with issues',
             'broken' => 'Broken',
             'premium-risk' => 'Premium risk',
+            'unindexed' => 'Unindexed',
             default => 'Pending',
         };
     }

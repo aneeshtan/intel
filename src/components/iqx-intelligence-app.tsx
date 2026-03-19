@@ -11,6 +11,8 @@ function getAdminSourceStatusClass(status: string) {
     ? "bg-emerald-100 text-emerald-700"
     : status === "flaky"
       ? "bg-amber-100 text-amber-700"
+      : status === "unindexed"
+        ? "bg-sky-100 text-sky-700"
       : status === "broken"
         ? "bg-rose-100 text-rose-700"
         : status === "premium-risk"
@@ -169,6 +171,7 @@ type MediaCoverage = {
     flaky_sources: number;
     broken_sources: number;
     premium_risk_sources: number;
+    unindexed_sources: number;
     pending_sources: number;
   };
   sources: {
@@ -1309,7 +1312,7 @@ export function IqxIntelligenceApp() {
   const [adminArticlesPage, setAdminArticlesPage] = useState(1);
   const [adminSourceQuery, setAdminSourceQuery] = useState("");
   const [adminSourceStatusFilter, setAdminSourceStatusFilter] = useState<
-    "all" | "working" | "flaky" | "broken" | "premium-risk" | "pending"
+    "all" | "working" | "flaky" | "broken" | "premium-risk" | "unindexed"
   >("all");
   const [keywordForm, setKeywordForm] = useState({
     keyword: "",
@@ -3160,6 +3163,18 @@ export function IqxIntelligenceApp() {
                       </article>
 
                       <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Unindexed
+                        </p>
+                        <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
+                          {mediaCoverage?.summary.unindexed_sources ?? 0}
+                        </strong>
+                        <p className="mt-2 text-sm leading-6 text-stone-500">
+                          Configured sources that do not have captured articles yet.
+                        </p>
+                      </article>
+
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Archive articles</p>
                         <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
                           {allCapturedArticleMeta.total}
@@ -3168,19 +3183,19 @@ export function IqxIntelligenceApp() {
                           Total captured articles available in the admin archive.
                         </p>
                       </article>
-
-                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
-                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Latest article</p>
-                        <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
-                          {latestCapturedArticle?.title ?? "No archived article yet"}
-                        </strong>
-                        <p className="mt-2 text-sm leading-6 text-stone-500">
-                          {latestCapturedArticle
-                            ? `${latestCapturedArticle.source_name} · ${formatPublishedAt(latestCapturedArticle.published_at)}`
-                            : "The most recent captured article will appear here once the archive is populated."}
-                        </p>
-                      </article>
                     </div>
+
+                    <article className="mt-4 rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                      <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Latest article</p>
+                      <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                        {latestCapturedArticle?.title ?? "No archived article yet"}
+                      </strong>
+                      <p className="mt-2 text-sm leading-6 text-stone-500">
+                        {latestCapturedArticle
+                          ? `${latestCapturedArticle.source_name} · ${formatPublishedAt(latestCapturedArticle.published_at)}`
+                          : "The most recent captured article will appear here once the archive is populated."}
+                      </p>
+                    </article>
                   </>
                 ) : activeWorkspaceTab === "profile" ? (
                   <>
@@ -4822,11 +4837,11 @@ export function IqxIntelligenceApp() {
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
                         {mediaCoverage?.summary.flaky_sources ?? 0} flaky
                       </span>
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
+                        {mediaCoverage?.summary.unindexed_sources ?? 0} unindexed
+                      </span>
                       <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700">
                         {mediaCoverage?.summary.broken_sources ?? 0} broken
-                      </span>
-                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-500">
-                        {mediaCoverage?.summary.pending_sources ?? 0} pending
                       </span>
                     </div>
                   </div>
@@ -4853,7 +4868,7 @@ export function IqxIntelligenceApp() {
                               | "flaky"
                               | "broken"
                               | "premium-risk"
-                              | "pending",
+                              | "unindexed",
                           )
                         }
                         className={inputClassName}
@@ -4861,8 +4876,8 @@ export function IqxIntelligenceApp() {
                         <option value="all">All statuses</option>
                         <option value="working">Indexed / healthy</option>
                         <option value="flaky">Indexed / issues</option>
+                        <option value="unindexed">Unindexed</option>
                         <option value="broken">Broken</option>
-                        <option value="pending">Pending</option>
                         <option value="premium-risk">Premium risk</option>
                       </select>
                     </label>

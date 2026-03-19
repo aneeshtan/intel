@@ -88,7 +88,7 @@ class AdminMediaCoverageTest extends TestCase
             ->assertJsonPath('data.summary.archive_articles', 1)
             ->assertJsonPath('data.summary.matched_mentions', 1)
             ->assertJsonPath('data.summary.working_sources', 1)
-            ->assertJsonPath('data.summary.pending_sources', 1);
+            ->assertJsonPath('data.summary.unindexed_sources', 1);
 
         $sources = collect($response->json('data.sources'))->keyBy('key');
 
@@ -98,8 +98,8 @@ class AdminMediaCoverageTest extends TestCase
         $this->assertSame(1, $sources['alpha']['matched_mentions_count']);
         $this->assertTrue($sources['alpha']['discovery_enabled']);
 
-        $this->assertSame('pending', $sources['beta']['status']);
-        $this->assertSame('Pending', $sources['beta']['status_label']);
+        $this->assertSame('unindexed', $sources['beta']['status']);
+        $this->assertSame('Unindexed', $sources['beta']['status_label']);
         $this->assertSame(0, $sources['beta']['article_count']);
     }
 

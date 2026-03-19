@@ -38,13 +38,13 @@ class AuditMediaSources extends Command
         $summary = $audit['summary'];
         $this->newLine();
         $this->info(sprintf(
-            'Configured sources: %d | working: %d | flaky: %d | broken: %d | premium-risk: %d | pending: %d',
+            'Configured sources: %d | working: %d | flaky: %d | broken: %d | premium-risk: %d | unindexed: %d',
             (int) $summary['configured_sources'],
             (int) $summary['working_sources'],
             (int) $summary['flaky_sources'],
             (int) $summary['broken_sources'],
             (int) $summary['premium_risk_sources'],
-            (int) ($summary['pending_sources'] ?? 0),
+            (int) ($summary['unindexed_sources'] ?? 0),
         ));
 
         return self::SUCCESS;
