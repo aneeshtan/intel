@@ -22,15 +22,22 @@ class MediaMentionIngestionService
         ?TrackedKeyword $singleKeyword = null,
         bool $force = false,
         ?int $lookbackDays = null,
-        bool $backfillArchive = true
+        bool $backfillArchive = true,
+        ?string $sourceKey = null,
     ): int {
         $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
 
         if ($backfillArchive) {
-            $this->backfillRecentArticles($lookbackDays, $force);
+            $this->backfillRecentArticles($lookbackDays, $force, $sourceKey);
         }
 
-        return $this->syncProjectMentionsFromArchive($project, $singleKeyword, $force, $lookbackDays);
+        return $this->syncProjectMentionsFromArchive(
+            $project,
+            $singleKeyword,
+            $force,
+            $lookbackDays,
+            $sourceKey,
+        );
     }
 
     public function backfillRecentArticles(
@@ -200,7 +207,8 @@ class MediaMentionIngestionService
         Project $project,
         ?TrackedKeyword $singleKeyword = null,
         bool $force = false,
-        ?int $lookbackDays = null
+        ?int $lookbackDays = null,
+        ?string $sourceKey = null
     ): int {
         $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
         $since = now()->subDays($lookbackDays)->startOfDay();
@@ -226,6 +234,7 @@ class MediaMentionIngestionService
             $this->deleteDemoMentions($project, $keyword);
 
             MediaArticle::query()
+                ->when($sourceKey, fn ($query) => $query->where('source_key', $sourceKey))
                 ->where(function ($query) use ($since) {
                     $query->whereNull('published_at')
                         ->orWhere('published_at', '>=', $since);

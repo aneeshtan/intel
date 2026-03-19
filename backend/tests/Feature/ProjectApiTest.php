@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\MediaArticle;
 use App\Models\Mention;
+use App\Services\MediaMentionIngestionService;
 use App\Models\User;
 use Database\Seeders\ConnectRelationshipsSeeder;
 use Database\Seeders\PermissionsTableSeeder;
@@ -265,6 +266,78 @@ class ProjectApiTest extends TestCase
             ->assertJsonPath('data.source_groups.0.domain', 'theloadstar.com')
             ->assertJsonPath('data.source_groups.0.muted', true)
             ->assertJsonCount(0, 'data.mentions');
+    }
+
+    public function test_source_scoped_media_sync_only_creates_mentions_for_the_selected_source(): void
+    {
+        $this->seed([
+            PermissionsTableSeeder::class,
+            RolesTableSeeder::class,
+            ConnectRelationshipsSeeder::class,
+            PlanSeeder::class,
+        ]);
+
+        $user = User::factory()->create();
+        $role = config('roles.models.role')::query()->where('slug', 'user')->first();
+        $user->attachRole($role);
+
+        $project = $user->projects()->create([
+            'name' => 'SeaLead Watch',
+            'slug' => 'sealead-watch',
+            'description' => 'Tracks SeaLead coverage.',
+            'audience' => 'Operators',
+            'status' => 'active',
+            'monitored_platforms' => ['media'],
+        ]);
+
+        $keyword = $project->trackedKeywords()->create([
+            'keyword' => 'SeaLead',
+            'platform' => 'media',
+            'match_type' => 'phrase',
+            'is_active' => true,
+        ]);
+
+        MediaArticle::query()->create([
+            'source_key' => 'alpha-source',
+            'source_name' => 'Alpha Source',
+            'source_url' => 'https://alpha.example.test',
+            'external_id' => 'alpha-1',
+            'url' => 'https://alpha.example.test/articles/1',
+            'title' => 'SeaLead expands from alpha',
+            'body' => 'SeaLead appears in the alpha source article.',
+            'published_at' => now()->subHour(),
+        ]);
+
+        MediaArticle::query()->create([
+            'source_key' => 'beta-source',
+            'source_name' => 'Beta Source',
+            'source_url' => 'https://beta.example.test',
+            'external_id' => 'beta-1',
+            'url' => 'https://beta.example.test/articles/1',
+            'title' => 'SeaLead expands from beta',
+            'body' => 'SeaLead appears in the beta source article.',
+            'published_at' => now()->subHour(),
+        ]);
+
+        app(MediaMentionIngestionService::class)->syncProjectMentionsFromArchive(
+            $project,
+            $keyword,
+            true,
+            90,
+            'alpha-source',
+        );
+
+        $this->assertDatabaseHas('mentions', [
+            'project_id' => $project->id,
+            'tracked_keyword_id' => $keyword->id,
+            'title' => 'SeaLead expands from alpha',
+        ]);
+
+        $this->assertDatabaseMissing('mentions', [
+            'project_id' => $project->id,
+            'tracked_keyword_id' => $keyword->id,
+            'title' => 'SeaLead expands from beta',
+        ]);
     }
 
     public function test_authenticated_user_can_override_a_mentions_sentiment(): void

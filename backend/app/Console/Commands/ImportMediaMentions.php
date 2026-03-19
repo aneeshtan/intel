@@ -44,7 +44,13 @@ class ImportMediaMentions extends Command
         foreach ($projects as $project) {
             /** @var TrackedKeyword|null $keyword */
             $keyword = $keywordId ? $project->trackedKeywords->first() : null;
-            $projectInserted = $service->syncProjectMentionsFromArchive($project, $keyword, $force, $lookbackDays);
+            $projectInserted = $service->syncProjectMentionsFromArchive(
+                $project,
+                $keyword,
+                $force,
+                $lookbackDays,
+                $sourceKey,
+            );
             $inserted += $projectInserted;
 
             $this->line("Project {$project->id} {$project->name}: {$projectInserted} mentions imported.");
