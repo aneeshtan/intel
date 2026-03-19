@@ -285,32 +285,65 @@ return [
         [
             'key' => 'dp-world-news',
             'name' => 'DP World News',
-            'homepage' => 'https://www.dpworld.com/news/releases',
+            'homepage' => 'https://www.dpworld.com/en/news',
+            'include_url_patterns' => [
+                '#^https://www\.dpworld\.com/en/news/[^/?#]+#i',
+            ],
         ],
         [
             'key' => 'ad-ports-news',
             'name' => 'AD Ports Group News',
-            'homepage' => 'https://www.adportsgroup.com/news-and-media',
+            'homepage' => 'https://www.adportsgroup.com/en/news-and-media',
+            'include_url_patterns' => [
+                '#^https://www\.adportsgroup\.com/en/news-and-media/.+#i',
+            ],
+            'exclude_url_patterns' => [
+                '#^https://www\.adportsgroup\.com/ar/news-and-media(?:/|$)#i',
+            ],
         ],
         [
             'key' => 'apm-terminals-news',
             'name' => 'APM Terminals News',
-            'homepage' => 'https://www.apmterminals.com/en/news',
+            'homepage' => 'https://www.apmterminals.com/en/news/news-releases',
+            'include_url_patterns' => [
+                '#^https://www\.apmterminals\.com/en/news/news-releases/\d{4}/.+#i',
+            ],
         ],
         [
             'key' => 'port-of-rotterdam-news',
             'name' => 'Port of Rotterdam News',
             'homepage' => 'https://www.portofrotterdam.com/en/news-and-press-releases',
+            'feed_url' => 'https://www.portofrotterdam.com/en/rss.xml',
+            'disable_sitemaps' => true,
+            'include_url_patterns' => [
+                '#^https://www\.portofrotterdam\.com/(?:en/news-and-press-releases|nl/nieuws-en-persberichten)/[^/?#]+#i',
+            ],
         ],
         [
             'key' => 'mpa-singapore-media',
             'name' => 'MPA Singapore Media Centre',
             'homepage' => 'https://www.mpa.gov.sg/media-centre',
+            'feed_url' => 'https://www.mpa.gov.sg/feeds/media-releases',
+            'disable_sitemaps' => true,
+            'include_url_patterns' => [
+                '#^https://www\.mpa\.gov\.sg/media-centre/details/[^/?#]+#i',
+            ],
+            'exclude_title_patterns' => [
+                '#^PORT MARINE NOTICE\b#i',
+                '#^PORT MARINE CIRCULAR\b#i',
+                '#^MAR(?:\(|\s|$)#i',
+                '#^NOTICES? TO MARINERS\b#i',
+            ],
         ],
         [
             'key' => 'port-houston-news',
             'name' => 'Port Houston News',
-            'homepage' => 'https://porthouston.com/news/',
+            'homepage' => 'https://porthouston.com/',
+            'feed_url' => 'https://porthouston.com/feed/',
+            'disable_sitemaps' => true,
+            'include_url_patterns' => [
+                '#^https://porthouston\.com/(?!wp-content/uploads/).+#i',
+            ],
         ],
     ],
 ];

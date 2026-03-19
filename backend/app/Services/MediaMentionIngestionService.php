@@ -370,6 +370,8 @@ class MediaMentionIngestionService
             $feedCandidates = $this->fetchFeedItems($feedUrl)
                 ->map(fn (array $item) => [
                     'url' => $item['url'],
+                    'title' => $item['title'] ?? null,
+                    'text' => $item['text'] ?? null,
                     'published_at' => $item['published_at'],
                     'feed_url' => $feedUrl,
                 ]);
@@ -382,7 +384,7 @@ class MediaMentionIngestionService
         return $feedCandidates
             ->merge($sitemapCandidates)
             ->filter(function (array $candidate) use ($source, $since): bool {
-                if (! $this->looksLikeArticleUrl($candidate['url'], $source)) {
+                if (! $this->looksLikeArticleCandidate($candidate, $source)) {
                     return false;
                 }
 
@@ -408,34 +410,39 @@ class MediaMentionIngestionService
             now()->addMinutes((int) config('media_sources.discovery_ttl_minutes', 360)),
             function () use ($source): Collection {
                 $urls = collect();
-                $robotsUrl = rtrim($source['homepage'], '/').'/robots.txt';
+                $robotsCandidates = collect();
+                $origin = $this->sourceOrigin((string) ($source['homepage'] ?? ''));
 
-                try {
-                    $robotsResponse = $this->httpClient()->get($robotsUrl);
-
-                    if ($robotsResponse->successful()) {
-                        preg_match_all('/^\s*Sitemap:\s*(\S+)/im', $robotsResponse->body(), $matches);
-
-                        foreach ($matches[1] ?? [] as $match) {
-                            $urls->push(trim($match));
-                        }
-                    }
-                } catch (\Throwable $exception) {
-                    Log::warning('Media robots discovery failed.', [
-                        'source' => $source['key'],
-                        'robots_url' => $robotsUrl,
-                        'message' => $exception->getMessage(),
-                    ]);
+                if ($origin) {
+                    $robotsCandidates->push($this->joinDiscoveryUrl($origin, '/robots.txt'));
                 }
 
-                foreach (($source['sitemap_paths'] ?? [
-                    '/sitemap.xml',
-                    '/sitemap_index.xml',
-                    '/post-sitemap.xml',
-                    '/news-sitemap.xml',
-                    '/article-sitemap.xml',
-                ]) as $path) {
-                    $urls->push(rtrim($source['homepage'], '/').$path);
+                $robotsCandidates->push($this->joinDiscoveryUrl((string) $source['homepage'], '/robots.txt'));
+
+                foreach ($robotsCandidates->filter()->unique() as $robotsUrl) {
+                    try {
+                        $robotsResponse = $this->httpClient()->get($robotsUrl);
+
+                        if ($robotsResponse->successful()) {
+                            preg_match_all('/^\s*Sitemap:\s*(\S+)/im', $robotsResponse->body(), $matches);
+
+                            foreach ($matches[1] ?? [] as $match) {
+                                $urls->push(trim($match));
+                            }
+                        }
+                    } catch (\Throwable $exception) {
+                        Log::warning('Media robots discovery failed.', [
+                            'source' => $source['key'],
+                            'robots_url' => $robotsUrl,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                }
+
+                foreach ($this->sourceDiscoveryBases($source) as $baseUrl) {
+                    foreach (($source['sitemap_paths'] ?? $this->commonSitemapPaths()) as $path) {
+                        $urls->push($this->joinDiscoveryUrl($baseUrl, $path));
+                    }
                 }
 
                 return $urls->unique()->values()->take((int) config('media_sources.archive_sitemap_limit_per_source', 12));
@@ -766,17 +773,19 @@ class MediaMentionIngestionService
                     return $feedLink;
                 }
 
-                foreach ($this->commonFeedPaths() as $path) {
-                    $candidate = rtrim($source['homepage'], '/').$path;
+                foreach ($this->sourceDiscoveryBases($source) as $baseUrl) {
+                    foreach ($this->commonFeedPaths() as $path) {
+                        $candidate = $this->joinDiscoveryUrl($baseUrl, $path);
 
-                    try {
-                        $candidateResponse = $this->httpClient()->get($candidate);
-                    } catch (\Throwable) {
-                        continue;
-                    }
+                        try {
+                            $candidateResponse = $this->httpClient()->get($candidate);
+                        } catch (\Throwable) {
+                            continue;
+                        }
 
-                    if ($candidateResponse->successful() && $this->isXmlFeed($candidateResponse->body())) {
-                        return $candidate;
+                        if ($candidateResponse->successful() && $this->isXmlFeed($candidateResponse->body())) {
+                            return $candidate;
+                        }
                     }
                 }
 
@@ -792,6 +801,51 @@ class MediaMentionIngestionService
             '/rss',
             '/rss.xml',
         ];
+    }
+
+    private function commonSitemapPaths(): array
+    {
+        return [
+            '/sitemap.xml',
+            '/sitemap_index.xml',
+            '/post-sitemap.xml',
+            '/news-sitemap.xml',
+            '/article-sitemap.xml',
+        ];
+    }
+
+    private function sourceDiscoveryBases(array $source): Collection
+    {
+        $homepage = trim((string) ($source['homepage'] ?? ''));
+        $origin = $this->sourceOrigin($homepage);
+
+        return collect([$origin, $homepage])
+            ->filter()
+            ->map(fn (string $value) => rtrim($value, '/'))
+            ->unique()
+            ->values();
+    }
+
+    private function sourceOrigin(string $url): ?string
+    {
+        $parts = parse_url($url);
+
+        if (! isset($parts['scheme'], $parts['host'])) {
+            return null;
+        }
+
+        $origin = $parts['scheme'].'://'.$parts['host'];
+
+        if (isset($parts['port'])) {
+            $origin .= ':'.$parts['port'];
+        }
+
+        return $origin;
+    }
+
+    private function joinDiscoveryUrl(string $baseUrl, string $path): string
+    {
+        return rtrim($baseUrl, '/').$path;
     }
 
     private function extractFeedUrlFromHtml(string $html, string $homepage): ?string
@@ -983,6 +1037,25 @@ class MediaMentionIngestionService
         return $limit ? Str::limit($value, $limit, '...') : $value;
     }
 
+    private function looksLikeArticleCandidate(array $candidate, array $source = []): bool
+    {
+        $url = trim((string) ($candidate['url'] ?? ''));
+
+        if ($url === '' || ! $this->looksLikeArticleUrl($url, $source)) {
+            return false;
+        }
+
+        $title = trim((string) ($candidate['title'] ?? ''));
+
+        foreach (($source['exclude_title_patterns'] ?? []) as $pattern) {
+            if ($title !== '' && @preg_match($pattern, $title) === 1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function looksLikeArticleUrl(string $url, array $source = []): bool
     {
         $parts = parse_url($url);
@@ -1010,6 +1083,21 @@ class MediaMentionIngestionService
 
         foreach (($source['exclude_url_patterns'] ?? []) as $pattern) {
             if (@preg_match($pattern, $url) === 1) {
+                return false;
+            }
+        }
+
+        if (! empty($source['include_url_patterns'])) {
+            $matchesIncludePattern = false;
+
+            foreach ($source['include_url_patterns'] as $pattern) {
+                if (@preg_match($pattern, $url) === 1) {
+                    $matchesIncludePattern = true;
+                    break;
+                }
+            }
+
+            if (! $matchesIncludePattern) {
                 return false;
             }
         }

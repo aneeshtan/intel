@@ -112,6 +112,107 @@ class MediaDiscoveryTest extends TestCase
         });
     }
 
+    public function test_media_discovery_discovers_sitemaps_from_the_site_root_for_path_based_sources(): void
+    {
+        Bus::fake();
+
+        config()->set('media_sources.sources', [
+            [
+                'key' => 'dp-world-news',
+                'name' => 'DP World News',
+                'homepage' => 'https://feeds.example.test/en/news',
+                'include_url_patterns' => [
+                    '#^https://feeds\.example\.test/en/news/.+#i',
+                ],
+            ],
+        ]);
+
+        Http::fake([
+            'https://feeds.example.test/en/news' => Http::response('<html><head><title>DP World News</title></head><body></body></html>', 200),
+            'https://feeds.example.test/robots.txt' => Http::response(
+                "User-agent: *\nSitemap: https://feeds.example.test/sitemap.xml\n",
+                200,
+                ['Content-Type' => 'text/plain']
+            ),
+            'https://feeds.example.test/en/news/robots.txt' => Http::response('', 404),
+            'https://feeds.example.test/sitemap.xml' => Http::response(
+                <<<'XML'
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <url>
+                    <loc>https://feeds.example.test/en/news/sealead-expands-gulf-coverage</loc>
+                    <lastmod>2026-03-18T09:00:00Z</lastmod>
+                  </url>
+                </urlset>
+                XML,
+                200,
+                ['Content-Type' => 'application/xml']
+            ),
+            '*' => Http::response('', 404),
+        ]);
+
+        $this->artisan('media:discover --days=7')
+            ->expectsOutputToContain('Media discovery queued 1 article fetch job(s).')
+            ->assertSuccessful();
+
+        Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
+            return ($job->source['key'] ?? null) === 'dp-world-news'
+                && ($job->candidate['url'] ?? null) === 'https://feeds.example.test/en/news/sealead-expands-gulf-coverage';
+        });
+    }
+
+    public function test_source_title_filters_ignore_feed_items_with_excluded_titles(): void
+    {
+        $service = app(MediaMentionIngestionService::class);
+        $parseFeed = new \ReflectionMethod($service, 'parseFeed');
+        $parseFeed->setAccessible(true);
+        $looksLikeArticleCandidate = new \ReflectionMethod($service, 'looksLikeArticleCandidate');
+        $looksLikeArticleCandidate->setAccessible(true);
+
+        $items = $parseFeed->invoke(
+            $service,
+            <<<'XML'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>MPA Media Releases</title>
+                <item>
+                  <title>PORT MARINE NOTICE NO. 45 OF 2026 - SOIL INVESTIGATION WORKS</title>
+                  <link>https://feeds.example.test/media-centre/details/port-marine-notice-no-45</link>
+                  <description>Operational notice.</description>
+                  <pubDate>Wed, 18 Mar 2026 09:00:00 GMT</pubDate>
+                </item>
+                <item>
+                  <title>Strengthening maritime competitiveness and operational excellence</title>
+                  <link>https://feeds.example.test/media-centre/details/strengthening-maritime-competitiveness</link>
+                  <description>Policy update.</description>
+                  <pubDate>Wed, 18 Mar 2026 10:00:00 GMT</pubDate>
+                </item>
+              </channel>
+            </rss>
+            XML
+        );
+
+        $source = [
+            'include_url_patterns' => [
+                '#^https://feeds\.example\.test/media-centre/details/.+#i',
+            ],
+            'exclude_title_patterns' => [
+                '#^PORT MARINE NOTICE\b#i',
+            ],
+        ];
+
+        $allowedUrls = $items
+            ->filter(fn (array $candidate): bool => $looksLikeArticleCandidate->invoke($service, $candidate, $source))
+            ->pluck('url')
+            ->values()
+            ->all();
+
+        $this->assertSame([
+            'https://feeds.example.test/media-centre/details/strengthening-maritime-competitiveness',
+        ], $allowedUrls);
+    }
+
     public function test_fetch_media_article_job_stores_article_and_creates_mentions(): void
     {
         $this->seedBase();
