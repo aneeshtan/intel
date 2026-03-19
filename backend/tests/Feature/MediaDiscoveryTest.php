@@ -288,6 +288,70 @@ class MediaDiscoveryTest extends TestCase
         ]);
     }
 
+    public function test_excerpt_only_source_stores_feed_excerpt_without_fetching_full_article(): void
+    {
+        $this->seedBase();
+
+        $user = User::factory()->create();
+        $role = config('roles.models.role')::query()->where('slug', 'user')->first();
+        $user->attachRole($role);
+
+        $project = $user->projects()->create([
+            'name' => 'Premium Watch',
+            'slug' => 'premium-watch',
+            'status' => 'active',
+            'monitored_platforms' => ['media'],
+        ]);
+
+        $keyword = $project->trackedKeywords()->create([
+            'keyword' => 'SeaLead',
+            'platform' => 'media',
+            'match_type' => 'phrase',
+            'is_active' => true,
+        ]);
+
+        Http::fake([
+            '*' => Http::response('', 500),
+        ]);
+
+        $job = new FetchMediaArticleJob(
+            [
+                'key' => 'premium-feed',
+                'name' => 'Premium Feed',
+                'homepage' => 'https://premium.example.test/',
+                'access' => 'premium',
+                'excerpt_only' => true,
+            ],
+            [
+                'url' => 'https://premium.example.test/articles/sealead-route',
+                'feed_url' => 'https://premium.example.test/rss.xml',
+                'title' => 'SeaLead expands premium coverage',
+                'body' => 'SeaLead premium feed excerpt for licensed monitoring only.',
+                'author' => 'Premium Desk',
+                'published_at' => '2026-03-17T09:00:00Z',
+            ],
+            90,
+            true,
+        );
+
+        $job->handle(app(MediaMentionIngestionService::class));
+
+        $this->assertDatabaseHas('media_articles', [
+            'source_key' => 'premium-feed',
+            'title' => 'SeaLead expands premium coverage',
+            'body' => 'SeaLead premium feed excerpt for licensed monitoring only.',
+            'author_name' => 'Premium Desk',
+        ]);
+
+        $this->assertDatabaseHas('mentions', [
+            'project_id' => $project->id,
+            'tracked_keyword_id' => $keyword->id,
+            'source' => 'media',
+            'title' => 'SeaLead expands premium coverage',
+            'body' => 'SeaLead premium feed excerpt for licensed monitoring only.',
+        ]);
+    }
+
     private function seedBase(): void
     {
         $this->seed([

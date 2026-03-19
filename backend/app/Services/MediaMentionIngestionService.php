@@ -323,7 +323,9 @@ class MediaMentionIngestionService
             return null;
         }
 
-        $article = $this->fetchArticle($source, $url, $candidatePublishedAt);
+        $article = $this->sourceUsesExcerptOnly($source)
+            ? $this->articleFromCandidateExcerpt($candidate, $candidatePublishedAt)
+            : $this->fetchArticle($source, $url, $candidatePublishedAt);
 
         if (! $article) {
             return null;
@@ -353,6 +355,10 @@ class MediaMentionIngestionService
                 'feed_url' => $candidate['feed_url'] ?? null,
                 'lastmod' => $candidatePublishedAt?->toIso8601String(),
                 'backfilled_at' => now()->toIso8601String(),
+                'excerpt_only' => $this->sourceUsesExcerptOnly($source),
+                'excerpt_source' => $this->sourceUsesExcerptOnly($source)
+                    ? (! empty($candidate['body']) ? 'feed_excerpt' : 'title_only')
+                    : null,
             ],
         ]);
 
@@ -371,7 +377,9 @@ class MediaMentionIngestionService
                 ->map(fn (array $item) => [
                     'url' => $item['url'],
                     'title' => $item['title'] ?? null,
+                    'body' => $item['body'] ?? null,
                     'text' => $item['text'] ?? null,
+                    'author' => $item['author'] ?? null,
                     'published_at' => $item['published_at'],
                     'feed_url' => $feedUrl,
                 ]);
@@ -580,7 +588,33 @@ class MediaMentionIngestionService
         return [
             'url' => (string) ($candidate['url'] ?? ''),
             'feed_url' => $candidate['feed_url'] ?? null,
+            'title' => $candidate['title'] ?? null,
+            'body' => $candidate['body'] ?? null,
+            'author' => $candidate['author'] ?? null,
             'published_at' => $this->candidatePublishedAt($candidate)?->toIso8601String(),
+        ];
+    }
+
+    private function sourceUsesExcerptOnly(array $source): bool
+    {
+        return (bool) ($source['excerpt_only'] ?? false);
+    }
+
+    private function articleFromCandidateExcerpt(array $candidate, ?Carbon $fallbackPublishedAt): ?array
+    {
+        $title = $this->cleanText((string) ($candidate['title'] ?? ''));
+        $body = $this->cleanText((string) ($candidate['body'] ?? ''));
+        $author = $this->cleanText((string) ($candidate['author'] ?? ''));
+
+        if ($title === '' && $body === '') {
+            return null;
+        }
+
+        return [
+            'title' => $title ?: 'Untitled article',
+            'body' => $body ?: $title,
+            'author' => $author ?: null,
+            'published_at' => $fallbackPublishedAt,
         ];
     }
 

@@ -22,6 +22,7 @@ return [
             'name' => 'Trade Winds',
             'homepage' => 'https://www.tradewindsnews.com/',
             'access' => 'premium',
+            'excerpt_only' => true,
             'disable_discovery' => true,
         ],
         [
@@ -41,6 +42,7 @@ return [
             'name' => 'Shipping Watch',
             'homepage' => 'https://shippingwatch.com/',
             'access' => 'premium',
+            'excerpt_only' => true,
             'disable_discovery' => true,
         ],
         [
@@ -69,6 +71,7 @@ return [
             'name' => 'JOC',
             'homepage' => 'https://www.joc.com/',
             'access' => 'premium',
+            'excerpt_only' => true,
             'disable_discovery' => true,
         ],
         [
@@ -111,6 +114,7 @@ return [
             'name' => 'DVZ',
             'homepage' => 'https://www.dvz.de/',
             'access' => 'premium',
+            'excerpt_only' => true,
             'disable_discovery' => true,
         ],
         [
@@ -123,6 +127,7 @@ return [
             'name' => 'World Cargo News',
             'homepage' => 'https://www.worldcargonews.com/',
             'access' => 'premium',
+            'excerpt_only' => true,
             'disable_discovery' => true,
         ],
         [
@@ -210,6 +215,7 @@ return [
             'name' => 'Lloyd\'s List',
             'homepage' => 'https://lloydslist.com/',
             'access' => 'premium',
+            'excerpt_only' => true,
             'disable_discovery' => true,
         ],
         [
