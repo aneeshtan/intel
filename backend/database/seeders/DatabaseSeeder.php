@@ -26,7 +26,7 @@ class DatabaseSeeder extends Seeder
             $adminRole = config('roles.models.role')::query()->where('slug', 'admin')->first();
 
             $admin = User::query()->firstOrCreate(
-                ['email' => 'admin@admin.com'],
+                ['email' => 'admin@ctrlaltl.com'],
                 ['name' => 'IQX Admin', 'password' => 'admin'],
             );
 
