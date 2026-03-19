@@ -20,6 +20,32 @@ function getAdminSourceStatusClass(status: string) {
           : "bg-stone-200 text-stone-700";
 }
 
+function getAdminRefreshPhaseClass(phase: AdminRefreshPhase) {
+  return phase === "active"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : phase === "starting" || phase === "polling"
+      ? "border-sky-200 bg-sky-50 text-sky-700"
+      : phase === "stalled"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : phase === "error"
+          ? "border-rose-200 bg-rose-50 text-rose-700"
+          : "border-stone-200 bg-stone-50 text-stone-600";
+}
+
+function getAdminRefreshPhaseLabel(phase: AdminRefreshPhase) {
+  return phase === "active"
+    ? "Refresh active"
+    : phase === "starting"
+      ? "Starting refresh"
+      : phase === "polling"
+        ? "Checking progress"
+        : phase === "stalled"
+          ? "No visible change yet"
+          : phase === "error"
+            ? "Refresh failed"
+            : "Idle";
+}
+
 const overviewStats = [
   {
     label: "Signals captured today",
@@ -223,6 +249,22 @@ type AdminCapturedArticles = {
   query: string | null;
 };
 
+type AdminRefreshPhase = "idle" | "starting" | "polling" | "active" | "stalled" | "error";
+
+type AdminRefreshState = {
+  phase: AdminRefreshPhase;
+  started_at: string | null;
+  poll_attempt: number;
+  max_polls: number;
+  baseline_article_count: number;
+  current_article_count: number;
+  baseline_indexed_sources: number;
+  current_indexed_sources: number;
+  latest_article_title: string | null;
+  latest_article_published_at: string | null;
+  message: string | null;
+};
+
 type AuthResponse = {
   token: string;
   user: {
@@ -344,6 +386,22 @@ function formatPublishedAt(value: string | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function createAdminRefreshState(): AdminRefreshState {
+  return {
+    phase: "idle",
+    started_at: null,
+    poll_attempt: 0,
+    max_polls: 12,
+    baseline_article_count: 0,
+    current_article_count: 0,
+    baseline_indexed_sources: 0,
+    current_indexed_sources: 0,
+    latest_article_title: null,
+    latest_article_published_at: null,
+    message: null,
+  };
 }
 
 function formatCompactNumber(value: number) {
@@ -1255,6 +1313,9 @@ export function IqxIntelligenceApp() {
   const [alertInbox, setAlertInbox] = useState<AlertInboxItem[]>([]);
   const [mediaCoverage, setMediaCoverage] = useState<MediaCoverage | null>(null);
   const [capturedArticles, setCapturedArticles] = useState<AdminCapturedArticles | null>(null);
+  const [adminRefreshState, setAdminRefreshState] = useState<AdminRefreshState>(() =>
+    createAdminRefreshState(),
+  );
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("results");
   const [bootError, setBootError] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
@@ -1332,6 +1393,7 @@ export function IqxIntelligenceApp() {
     setAlertInbox([]);
     setMediaCoverage(null);
     setCapturedArticles(null);
+    setAdminRefreshState(createAdminRefreshState());
     setActiveWorkspaceTab("results");
   };
 
@@ -1495,6 +1557,7 @@ export function IqxIntelligenceApp() {
     } else {
       setMediaCoverage(null);
       setCapturedArticles(null);
+      setAdminRefreshState(createAdminRefreshState());
     }
   };
 
@@ -2422,8 +2485,26 @@ export function IqxIntelligenceApp() {
 
     startTransition(async () => {
       try {
+        const startedAt = new Date().toISOString();
         const baselineArticleCount = mediaCoverage?.summary.archive_articles ?? 0;
+        const baselineIndexedSources = mediaCoverage?.summary.indexed_sources ?? 0;
         const baselineLatestArticleId = capturedArticles?.items[0]?.id ?? null;
+        const baselineLatestArticle = capturedArticles?.items[0] ?? null;
+        const maxPolls = 12;
+
+        setAdminRefreshState({
+          phase: "starting",
+          started_at: startedAt,
+          poll_attempt: 0,
+          max_polls: maxPolls,
+          baseline_article_count: baselineArticleCount,
+          current_article_count: baselineArticleCount,
+          baseline_indexed_sources: baselineIndexedSources,
+          current_indexed_sources: baselineIndexedSources,
+          latest_article_title: baselineLatestArticle?.title ?? null,
+          latest_article_published_at: baselineLatestArticle?.published_at ?? null,
+          message: "Queueing refresh for news, Reddit, and X.",
+        });
         const response = await apiRequest<{
           data: { projects_processed: number; capture_started: boolean };
           message: string;
@@ -2440,12 +2521,19 @@ export function IqxIntelligenceApp() {
           token,
         );
 
+        setAdminRefreshState((current) => ({
+          ...current,
+          phase: "polling",
+          message: response.message,
+        }));
+
         await hydrateSession(token, selectedProjectId);
 
         if (profile?.roles.includes("admin")) {
-          let archiveUpdated = false;
+          let archiveActivityDetected = false;
+          let latestState = createAdminRefreshState();
 
-          for (let attempt = 0; attempt < 12; attempt += 1) {
+          for (let attempt = 1; attempt <= maxPolls; attempt += 1) {
             await wait(5000);
 
             const { coverage, articles } = await refreshAdminArchive(
@@ -2454,21 +2542,68 @@ export function IqxIntelligenceApp() {
               activeWorkspaceTab === "articles" ? adminArticlesQuery : "",
             );
 
-            const latestArticleId = articles.items[0]?.id ?? null;
+            const latestArticle = articles.items[0] ?? null;
+            const latestArticleId = latestArticle?.id ?? null;
+            const currentArticleCount = coverage.summary.archive_articles;
+            const currentIndexedSources = coverage.summary.indexed_sources;
+            const activityDetected =
+              currentArticleCount > baselineArticleCount ||
+              currentIndexedSources > baselineIndexedSources ||
+              latestArticleId !== baselineLatestArticleId;
 
-            if (
-              coverage.summary.archive_articles > baselineArticleCount ||
-              latestArticleId !== baselineLatestArticleId
-            ) {
-              archiveUpdated = true;
+            latestState = {
+              phase: activityDetected ? "active" : "polling",
+              started_at: startedAt,
+              poll_attempt: attempt,
+              max_polls: maxPolls,
+              baseline_article_count: baselineArticleCount,
+              current_article_count: currentArticleCount,
+              baseline_indexed_sources: baselineIndexedSources,
+              current_indexed_sources: currentIndexedSources,
+              latest_article_title: latestArticle?.title ?? baselineLatestArticle?.title ?? null,
+              latest_article_published_at:
+                latestArticle?.published_at ?? baselineLatestArticle?.published_at ?? null,
+              message: activityDetected
+                ? "New archive activity detected. Background indexing may still be running."
+                : `Checking source and archive progress (${attempt}/${maxPolls}).`,
+            };
+
+            setAdminRefreshState(latestState);
+
+            if (activityDetected) {
+              archiveActivityDetected = true;
               break;
             }
           }
 
+          if (!archiveActivityDetected) {
+            latestState = {
+              phase: "stalled",
+              started_at: startedAt,
+              poll_attempt: maxPolls,
+              max_polls: maxPolls,
+              baseline_article_count: baselineArticleCount,
+              current_article_count: latestState.current_article_count || baselineArticleCount,
+              baseline_indexed_sources: baselineIndexedSources,
+              current_indexed_sources:
+                latestState.current_indexed_sources || baselineIndexedSources,
+              latest_article_title:
+                latestState.latest_article_title ?? baselineLatestArticle?.title ?? null,
+              latest_article_published_at:
+                latestState.latest_article_published_at ??
+                baselineLatestArticle?.published_at ??
+                null,
+              message:
+                "Refresh started, but no new indexed articles were visible during the last minute.",
+            };
+
+            setAdminRefreshState(latestState);
+          }
+
           setFlashMessage(
-            archiveUpdated
-              ? "Archive refresh completed. New captured articles are now available."
-              : response.message,
+            archiveActivityDetected
+              ? "Refresh activity detected. Open Admin Center to monitor indexed sources and captured articles."
+              : "Refresh started. Open Admin Center to watch indexing progress.",
           );
         } else {
           setFlashMessage(response.message);
@@ -2476,6 +2611,12 @@ export function IqxIntelligenceApp() {
 
         setBootError(null);
       } catch (error) {
+        setAdminRefreshState((current) => ({
+          ...current,
+          phase: "error",
+          message:
+            error instanceof Error ? error.message : "Media capture could not be started.",
+        }));
         setBootError(
           error instanceof Error ? error.message : "Media capture could not be started.",
         );
@@ -2600,6 +2741,28 @@ export function IqxIntelligenceApp() {
     total: 0,
   };
   const latestCapturedArticle = allCapturedArticleItems[0] ?? null;
+  const adminRefreshArticleDelta =
+    adminRefreshState.current_article_count - adminRefreshState.baseline_article_count;
+  const adminRefreshIndexedDelta =
+    adminRefreshState.current_indexed_sources - adminRefreshState.baseline_indexed_sources;
+  const adminRefreshProgressPercent =
+    adminRefreshState.phase === "idle"
+      ? 0
+      : Math.max(
+          8,
+          Math.min(
+            100,
+            Math.round((adminRefreshState.poll_attempt / adminRefreshState.max_polls) * 100),
+          ),
+        );
+  const isAdminRefreshRunning =
+    adminRefreshState.phase === "starting" || adminRefreshState.phase === "polling";
+  const adminRefreshButtonLabel =
+    adminRefreshState.phase === "starting"
+      ? "Starting refresh..."
+      : adminRefreshState.phase === "polling"
+        ? `Refreshing... ${adminRefreshState.poll_attempt}/${adminRefreshState.max_polls}`
+        : "Refresh archive";
   const channelCoverage = buildChannelCoverage(
     sourceGroups.length
       ? sourceGroups.map((group) => group.domain)
@@ -2782,10 +2945,10 @@ export function IqxIntelligenceApp() {
                   <button
                     type="button"
                     onClick={handleAdminCaptureMentions}
-                    disabled={isPending || !selectedProjectId}
+                    disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
                     className="rounded-full bg-stone-950 px-4 py-2 font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Refresh Archive
+                    {adminRefreshButtonLabel}
                   </button>
                 ) : null}
                 <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
@@ -3320,14 +3483,24 @@ export function IqxIntelligenceApp() {
                             {archiveArticles} archived articles
                           </span>
                         ) : null}
+                        {isAdmin && adminRefreshState.phase !== "idle" ? (
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAdminRefreshPhaseClass(adminRefreshState.phase)}`}
+                          >
+                            {getAdminRefreshPhaseLabel(adminRefreshState.phase)}
+                            {adminRefreshState.phase === "polling"
+                              ? ` ${adminRefreshState.poll_attempt}/${adminRefreshState.max_polls}`
+                              : ""}
+                          </span>
+                        ) : null}
                         {isAdmin ? (
                           <button
                             type="button"
                             onClick={handleAdminCaptureMentions}
-                            disabled={isPending || !selectedProjectId}
+                            disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
                             className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            Refresh archive
+                            {adminRefreshButtonLabel}
                           </button>
                         ) : null}
                       </div>
@@ -4562,10 +4735,10 @@ export function IqxIntelligenceApp() {
                       <button
                         type="button"
                         onClick={handleAdminCaptureMentions}
-                        disabled={isPending || !selectedProjectId}
+                        disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
                         className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        Refresh archive
+                        {adminRefreshButtonLabel}
                       </button>
                     ) : null}
                   </div>
@@ -4845,6 +5018,111 @@ export function IqxIntelligenceApp() {
                       </span>
                     </div>
                   </div>
+
+                  <article className="mt-5 rounded-[1.5rem] border border-stone-200 bg-stone-50/90 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                          Refresh progress
+                        </p>
+                        <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                          Watch source indexing live
+                        </h4>
+                        <p className="mt-2 max-w-3xl text-sm text-stone-500">
+                          Use refresh here, then watch article count, indexed source count, and
+                          the latest captured article update while the background jobs run.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAdminRefreshPhaseClass(adminRefreshState.phase)}`}
+                        >
+                          {getAdminRefreshPhaseLabel(adminRefreshState.phase)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleAdminCaptureMentions}
+                          disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
+                          className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {adminRefreshButtonLabel}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 h-2 overflow-hidden rounded-full bg-stone-200">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          adminRefreshState.phase === "error"
+                            ? "bg-rose-500"
+                            : adminRefreshState.phase === "active"
+                              ? "bg-emerald-500"
+                              : adminRefreshState.phase === "stalled"
+                                ? "bg-amber-500"
+                                : "bg-sky-500"
+                        }`}
+                        style={{ width: `${adminRefreshProgressPercent}%` }}
+                      />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-stone-500">
+                      <span className="rounded-full bg-white px-3 py-1">
+                        Checks: {adminRefreshState.poll_attempt}/{adminRefreshState.max_polls}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1">
+                        Started:{" "}
+                        {adminRefreshState.started_at
+                          ? formatPublishedAt(adminRefreshState.started_at)
+                          : "Not started"}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1">
+                        Articles: {adminRefreshState.current_article_count}
+                        {adminRefreshArticleDelta > 0 ? ` (+${adminRefreshArticleDelta})` : ""}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1">
+                        Indexed sources: {adminRefreshState.current_indexed_sources}
+                        {adminRefreshIndexedDelta > 0 ? ` (+${adminRefreshIndexedDelta})` : ""}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                      <article className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Current status
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-stone-600">
+                          {adminRefreshState.message ??
+                            "No refresh is running. Start one here to watch indexing activity."}
+                        </p>
+                      </article>
+                      <article className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          Latest captured article
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-stone-900">
+                          {adminRefreshState.latest_article_title ??
+                            latestCapturedArticle?.title ??
+                            "No captured article yet"}
+                        </p>
+                        <p className="mt-2 text-xs text-stone-500">
+                          {formatPublishedAt(
+                            adminRefreshState.latest_article_published_at ??
+                              latestCapturedArticle?.published_at ??
+                              null,
+                          )}
+                        </p>
+                      </article>
+                      <article className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                          What to watch
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-stone-600">
+                          New articles, higher indexed-source counts, fresher timestamps, and the
+                          archive list below updating with new rows.
+                        </p>
+                      </article>
+                    </div>
+                  </article>
 
                   <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
                     <label className="text-sm font-medium text-stone-700">
