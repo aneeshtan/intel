@@ -13,7 +13,7 @@ return [
     'repair_sync_lookback_days' => env('MEDIA_REPAIR_SYNC_LOOKBACK_DAYS', 2),
     'user_agent' => env(
         'MEDIA_HTTP_USER_AGENT',
-        'IQX Intelligence Feed Monitor/1.0 (+https://iqxintel.local)'
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
     ),
 
     'sources' => [
@@ -22,6 +22,7 @@ return [
             'name' => 'Trade Winds',
             'homepage' => 'https://www.tradewindsnews.com/',
             'access' => 'premium',
+            'disable_discovery' => true,
         ],
         [
             'key' => 'splash247',
@@ -32,17 +33,22 @@ return [
             'key' => 'the-loadstar',
             'name' => 'The Loadstar',
             'homepage' => 'https://theloadstar.com/',
+            'feed_url' => 'https://theloadstar.com/feed/',
+            'disable_sitemaps' => true,
         ],
         [
             'key' => 'shipping-watch',
             'name' => 'Shipping Watch',
             'homepage' => 'https://shippingwatch.com/',
             'access' => 'premium',
+            'disable_discovery' => true,
         ],
         [
             'key' => 'seatrade-maritime',
             'name' => 'Seatrade Maritime',
             'homepage' => 'https://www.seatrade-maritime.com/',
+            'feed_url' => 'https://www.seatrade-maritime.com/rss.xml',
+            'disable_sitemaps' => true,
             'exclude_url_patterns' => [
                 '#/recent-(webinars|podcasts|documents|videos|publications|industry-events)(?:/|$)#i',
                 '#/latest-news/?$#i',
@@ -63,6 +69,7 @@ return [
             'name' => 'JOC',
             'homepage' => 'https://www.joc.com/',
             'access' => 'premium',
+            'disable_discovery' => true,
         ],
         [
             'key' => 'the-maritime-standard',
@@ -104,6 +111,7 @@ return [
             'name' => 'DVZ',
             'homepage' => 'https://www.dvz.de/',
             'access' => 'premium',
+            'disable_discovery' => true,
         ],
         [
             'key' => 'supply-chain-dive',
@@ -115,6 +123,7 @@ return [
             'name' => 'World Cargo News',
             'homepage' => 'https://www.worldcargonews.com/',
             'access' => 'premium',
+            'disable_discovery' => true,
         ],
         [
             'key' => 'cargo-talk',
@@ -201,6 +210,7 @@ return [
             'name' => 'Lloyd\'s List',
             'homepage' => 'https://lloydslist.com/',
             'access' => 'premium',
+            'disable_discovery' => true,
         ],
         [
             'key' => 'safety4sea',

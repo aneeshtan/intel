@@ -46,6 +46,10 @@ class MediaMentionIngestionService
         $stored = 0;
 
         foreach ($sources as $source) {
+            if (! empty($source['disable_discovery'])) {
+                continue;
+            }
+
             if (! $force && $this->sourceRecentlySynced($source['key'])) {
                 continue;
             }
@@ -72,6 +76,10 @@ class MediaMentionIngestionService
         $limit = (int) config('media_sources.discovery_article_limit_per_source', 20);
 
         foreach ($sources as $source) {
+            if (! empty($source['disable_discovery'])) {
+                continue;
+            }
+
             $candidates = $this->discoverArchiveCandidates($source, $since);
 
             foreach ($candidates->take($limit) as $candidate) {
@@ -389,6 +397,10 @@ class MediaMentionIngestionService
 
     private function discoverSitemapUrls(array $source): Collection
     {
+        if (! empty($source['disable_sitemaps'])) {
+            return collect();
+        }
+
         $cacheKey = "media-sitemap-discovery:{$source['key']}";
 
         return Cache::remember(
@@ -416,13 +428,13 @@ class MediaMentionIngestionService
                     ]);
                 }
 
-                foreach ([
+                foreach (($source['sitemap_paths'] ?? [
                     '/sitemap.xml',
                     '/sitemap_index.xml',
                     '/post-sitemap.xml',
                     '/news-sitemap.xml',
                     '/article-sitemap.xml',
-                ] as $path) {
+                ]) as $path) {
                     $urls->push(rtrim($source['homepage'], '/').$path);
                 }
 
