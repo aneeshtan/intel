@@ -249,6 +249,8 @@ type AdminCapturedArticles = {
   query: string | null;
 };
 
+type AdminCenterTab = "sources" | "projects" | "users" | "keywords" | "indexes";
+
 type AdminRefreshPhase = "idle" | "starting" | "polling" | "active" | "stalled" | "error";
 
 type AdminRefreshState = {
@@ -263,6 +265,62 @@ type AdminRefreshState = {
   latest_article_title: string | null;
   latest_article_published_at: string | null;
   message: string | null;
+};
+
+type AdminWorkspaceData = {
+  summary: {
+    users: number;
+    projects: number;
+    keywords: number;
+    mentions: number;
+  };
+  projects: {
+    id: number;
+    name: string;
+    slug: string;
+    status: string;
+    description: string | null;
+    tracked_keywords_count: number;
+    mentions_count: number;
+    updated_at: string | null;
+    created_at: string | null;
+    user: {
+      id: number | null;
+      name: string | null;
+      email: string | null;
+    };
+  }[];
+  users: {
+    id: number;
+    name: string;
+    email: string;
+    roles: string[];
+    plan_name: string | null;
+    projects_count: number;
+    keywords_count: number;
+    mentions_count: number;
+    created_at: string | null;
+  }[];
+  keywords: {
+    id: number;
+    keyword: string;
+    platform: string;
+    match_type: string;
+    is_active: boolean;
+    mentions_count: number;
+    created_at: string | null;
+    updated_at: string | null;
+    project: {
+      id: number | null;
+      name: string | null;
+      status: string | null;
+    };
+    user: {
+      id: number | null;
+      name: string | null;
+      email: string | null;
+    };
+  }[];
 };
 
 type AuthResponse = {
@@ -1313,6 +1371,7 @@ export function IqxIntelligenceApp() {
   const [alertInbox, setAlertInbox] = useState<AlertInboxItem[]>([]);
   const [mediaCoverage, setMediaCoverage] = useState<MediaCoverage | null>(null);
   const [capturedArticles, setCapturedArticles] = useState<AdminCapturedArticles | null>(null);
+  const [adminWorkspaceData, setAdminWorkspaceData] = useState<AdminWorkspaceData | null>(null);
   const [adminRefreshState, setAdminRefreshState] = useState<AdminRefreshState>(() =>
     createAdminRefreshState(),
   );
@@ -1369,12 +1428,14 @@ export function IqxIntelligenceApp() {
   const [mentionsPage, setMentionsPage] = useState(1);
   const [analysisWindowDays, setAnalysisWindowDays] = useState<AnalysisWindowDays>(14);
   const [updatingMentionId, setUpdatingMentionId] = useState<number | null>(null);
+  const [activeAdminCenterTab, setActiveAdminCenterTab] = useState<AdminCenterTab>("sources");
   const [adminArticlesQuery, setAdminArticlesQuery] = useState("");
   const [adminArticlesPage, setAdminArticlesPage] = useState(1);
   const [adminSourceQuery, setAdminSourceQuery] = useState("");
   const [adminSourceStatusFilter, setAdminSourceStatusFilter] = useState<
     "all" | "working" | "flaky" | "broken" | "premium-risk" | "unindexed"
   >("all");
+  const [adminInventoryQuery, setAdminInventoryQuery] = useState("");
   const [keywordForm, setKeywordForm] = useState({
     keyword: "",
     platform: "all",
@@ -1393,6 +1454,7 @@ export function IqxIntelligenceApp() {
     setAlertInbox([]);
     setMediaCoverage(null);
     setCapturedArticles(null);
+    setAdminWorkspaceData(null);
     setAdminRefreshState(createAdminRefreshState());
     setActiveWorkspaceTab("results");
   };
@@ -1462,6 +1524,16 @@ export function IqxIntelligenceApp() {
     );
 
     setMediaCoverage(response.data);
+  };
+
+  const loadAdminWorkspaceData = async (authToken: string) => {
+    const response = await apiRequest<{ data: AdminWorkspaceData }>(
+      "/admin/workspace",
+      {},
+      authToken,
+    );
+
+    setAdminWorkspaceData(response.data);
   };
 
   const loadCapturedArticles = async (
@@ -1551,10 +1623,12 @@ export function IqxIntelligenceApp() {
 
     if (meResponse.data.roles.includes("admin")) {
       await Promise.all([
+        loadAdminWorkspaceData(authToken),
         loadMediaCoverage(authToken),
         loadCapturedArticles(authToken, 1, ""),
       ]);
     } else {
+      setAdminWorkspaceData(null);
       setMediaCoverage(null);
       setCapturedArticles(null);
       setAdminRefreshState(createAdminRefreshState());
@@ -2718,6 +2792,13 @@ export function IqxIntelligenceApp() {
     safeMentionsPage * mentionsPageSize,
   );
   const isAdmin = profile?.roles.includes("admin") ?? false;
+  const adminCenterTabs: { key: AdminCenterTab; label: string }[] = [
+    { key: "sources", label: "All Sources" },
+    { key: "projects", label: "All Projects" },
+    { key: "users", label: "All Users" },
+    { key: "keywords", label: "All Keywords" },
+    { key: "indexes", label: "All Indexes" },
+  ];
   const indexedSources = mediaCoverage?.summary.indexed_sources ?? 0;
   const archiveArticles = mediaCoverage?.summary.archive_articles ?? 0;
   const coverageSources = mediaCoverage?.sources.slice(0, 6) ?? [];
@@ -2741,6 +2822,40 @@ export function IqxIntelligenceApp() {
     total: 0,
   };
   const latestCapturedArticle = allCapturedArticleItems[0] ?? null;
+  const normalizedAdminInventoryQuery = adminInventoryQuery.trim().toLowerCase();
+  const adminProjects = (adminWorkspaceData?.projects ?? []).filter((project) => {
+    if (normalizedAdminInventoryQuery === "") {
+      return true;
+    }
+
+    return `${project.name} ${project.slug} ${project.status} ${project.user.name ?? ""} ${
+      project.user.email ?? ""
+    } ${project.description ?? ""}`
+      .toLowerCase()
+      .includes(normalizedAdminInventoryQuery);
+  });
+  const adminUsers = (adminWorkspaceData?.users ?? []).filter((account) => {
+    if (normalizedAdminInventoryQuery === "") {
+      return true;
+    }
+
+    return `${account.name} ${account.email} ${account.roles.join(" ")} ${
+      account.plan_name ?? ""
+    }`
+      .toLowerCase()
+      .includes(normalizedAdminInventoryQuery);
+  });
+  const adminKeywords = (adminWorkspaceData?.keywords ?? []).filter((keyword) => {
+    if (normalizedAdminInventoryQuery === "") {
+      return true;
+    }
+
+    return `${keyword.keyword} ${keyword.platform} ${keyword.match_type} ${
+      keyword.project.name ?? ""
+    } ${keyword.user.name ?? ""} ${keyword.user.email ?? ""}`
+      .toLowerCase()
+      .includes(normalizedAdminInventoryQuery);
+  });
   const adminRefreshArticleDelta =
     adminRefreshState.current_article_count - adminRefreshState.baseline_article_count;
   const adminRefreshIndexedDelta =
@@ -5000,21 +5115,21 @@ export function IqxIntelligenceApp() {
                         Admin center
                       </p>
                       <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                        Source inventory
+                        Platform inventory
                       </h3>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
-                        {mediaCoverage?.summary.working_sources ?? 0} healthy
+                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-700">
+                        {mediaCoverage?.summary.configured_sources ?? 0} sources
                       </span>
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
-                        {mediaCoverage?.summary.flaky_sources ?? 0} flaky
+                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-700">
+                        {adminWorkspaceData?.summary.projects ?? 0} projects
                       </span>
-                      <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
-                        {mediaCoverage?.summary.unindexed_sources ?? 0} unindexed
+                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-700">
+                        {adminWorkspaceData?.summary.users ?? 0} users
                       </span>
-                      <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700">
-                        {mediaCoverage?.summary.broken_sources ?? 0} broken
+                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-700">
+                        {adminWorkspaceData?.summary.keywords ?? 0} keywords
                       </span>
                     </div>
                   </div>
@@ -5124,301 +5239,673 @@ export function IqxIntelligenceApp() {
                     </div>
                   </article>
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-                    <label className="text-sm font-medium text-stone-700">
-                      Search sources
-                      <input
-                        value={adminSourceQuery}
-                        onChange={(event) => setAdminSourceQuery(event.target.value)}
-                        className={inputClassName}
-                        placeholder="Search by source, key, homepage, or health note"
-                      />
-                    </label>
-                    <label className="text-sm font-medium text-stone-700">
-                      Status
-                      <select
-                        value={adminSourceStatusFilter}
-                        onChange={(event) =>
-                          setAdminSourceStatusFilter(
-                            event.target.value as
-                              | "all"
-                              | "working"
-                              | "flaky"
-                              | "broken"
-                              | "premium-risk"
-                              | "unindexed",
-                          )
-                        }
-                        className={inputClassName}
-                      >
-                        <option value="all">All statuses</option>
-                        <option value="working">Indexed / healthy</option>
-                        <option value="flaky">Indexed / issues</option>
-                        <option value="unindexed">Unindexed</option>
-                        <option value="broken">Broken</option>
-                        <option value="premium-risk">Premium risk</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    {filteredAdminSources.length ? (
-                      filteredAdminSources.map((source) => (
-                        <article
-                          key={source.key}
-                          className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                                <span className="rounded-full bg-white px-3 py-1">{source.key}</span>
-                                <span
-                                  className={`rounded-full px-3 py-1 ${getAdminSourceStatusClass(source.status)}`}
-                                >
-                                  {source.status_label}
-                                </span>
-                                <span className="rounded-full bg-white px-3 py-1">
-                                  {source.access}
-                                </span>
-                              </div>
-                              <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
-                                {source.name}
-                              </h4>
-                              <p className="mt-2 text-sm leading-6 text-stone-500">{source.notes}</p>
-                            </div>
-                            <a
-                              href={source.homepage}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
-                            >
-                              Open source
-                            </a>
-                          </div>
-
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
-                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                                Articles
-                              </p>
-                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
-                                {source.article_count}
-                              </strong>
-                            </div>
-                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
-                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                                Matches
-                              </p>
-                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
-                                {source.matched_mentions_count}
-                              </strong>
-                            </div>
-                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
-                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                                Warnings
-                              </p>
-                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
-                                {source.warning_count}
-                              </strong>
-                            </div>
-                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
-                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                                Freshness
-                              </p>
-                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
-                                {source.freshness_hours === null
-                                  ? "N/A"
-                                  : `${Math.round(source.freshness_hours)}h`}
-                              </strong>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
-                            <span className="rounded-full bg-white px-3 py-1">
-                              Discovery: {source.discovery_enabled ? "On" : "Off"}
-                            </span>
-                            <span className="rounded-full bg-white px-3 py-1">
-                              Sitemaps: {source.sitemaps_enabled ? "On" : "Off"}
-                            </span>
-                            <span className="rounded-full bg-white px-3 py-1">
-                              Feed: {source.has_feed_url ? "Configured" : "Auto"}
-                            </span>
-                            {source.feed_url ? (
-                              <span className="rounded-full bg-white px-3 py-1">
-                                Feed URL: {source.feed_url}
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-4 grid gap-3 text-sm text-stone-600 sm:grid-cols-2">
-                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
-                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                                Latest article
-                              </p>
-                              <p className="mt-2">
-                                {source.latest_published_at
-                                  ? formatPublishedAt(source.latest_published_at)
-                                  : "Not indexed yet"}
-                              </p>
-                              <p className="mt-2 text-xs text-stone-500">
-                                Last ingest:{" "}
-                                {source.last_ingested_at
-                                  ? formatPublishedAt(source.last_ingested_at)
-                                  : "Pending"}
-                              </p>
-                            </div>
-                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
-                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                                Latest keyword match
-                              </p>
-                              <p className="mt-2">
-                                {source.latest_match_at
-                                  ? formatPublishedAt(source.latest_match_at)
-                                  : "No matched mention yet"}
-                              </p>
-                              <p className="mt-2 text-xs text-stone-500 break-all">
-                                {source.homepage}
-                              </p>
-                            </div>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500 lg:col-span-2">
-                        No sources match the current admin search and status filter.
-                      </article>
-                    )}
-                  </div>
-
-                  <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                        Captured archive
-                      </p>
-                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                        All captured maritime articles
-                      </h3>
-                    </div>
-                    <span className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold text-stone-500">
-                      {allCapturedArticleMeta.total} archived articles
-                    </span>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-                    <label className="text-sm font-medium text-stone-700">
-                      Search captured articles
-                      <input
-                        value={adminArticlesQuery}
-                        onChange={(event) => setAdminArticlesQuery(event.target.value)}
-                        className={inputClassName}
-                        placeholder="Search titles, body text, source, author, or URL"
-                      />
-                    </label>
-                    <div className="flex items-end">
+                  <div className="mt-6 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {adminCenterTabs.map((tab) => (
                       <button
+                        key={tab.key}
                         type="button"
-                        onClick={() => token && void loadCapturedArticles(token, 1, adminArticlesQuery)}
-                        disabled={isPending}
-                        className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => setActiveAdminCenterTab(tab.key)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                          activeAdminCenterTab === tab.key
+                            ? "bg-stone-950 text-stone-50"
+                            : "border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-900"
+                        }`}
                       >
-                        Refresh list
+                        {tab.label}
                       </button>
-                    </div>
+                    ))}
                   </div>
 
-                  <div className="mt-5 space-y-4">
-                    {allCapturedArticleItems.length ? (
-                      allCapturedArticleItems.map((article) => (
-                        <article
-                          key={article.id}
-                          className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div>
-                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                                <span className="rounded-full bg-white px-3 py-1">
-                                  {article.source_name}
-                                </span>
-                                <span className="rounded-full bg-white px-3 py-1">
-                                  {formatPublishedAt(article.published_at)}
-                                </span>
-                              </div>
-                              <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
-                                {article.title}
-                              </h4>
-                            </div>
-                            {article.url ? (
-                              <a
-                                href={article.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
-                              >
-                                Visit article
-                              </a>
-                            ) : null}
-                          </div>
-
-                          <p className="mt-3 text-sm leading-6 text-stone-600">
-                            {article.body}
-                          </p>
-
-                          <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
-                            <span className="rounded-full bg-white px-3 py-1">
-                              Source key: {article.source_key}
-                            </span>
-                            {article.author_name ? (
-                              <span className="rounded-full bg-white px-3 py-1">
-                                Author: {article.author_name}
-                              </span>
-                            ) : null}
-                            {article.source_url ? (
-                              <span className="rounded-full bg-white px-3 py-1">
-                                Home: {article.source_url}
-                              </span>
-                            ) : null}
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500">
-                        No captured articles match the current archive search.
-                      </article>
-                    )}
-                  </div>
-
-                  {allCapturedArticleMeta.last_page > 1 ? (
-                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                      <p className="text-sm text-stone-500">
-                        Page {allCapturedArticleMeta.current_page} of {allCapturedArticleMeta.last_page}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setAdminArticlesPage((current) => Math.max(1, current - 1))
-                          }
-                          disabled={allCapturedArticleMeta.current_page <= 1}
-                          className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Previous
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setAdminArticlesPage((current) =>
-                              Math.min(allCapturedArticleMeta.last_page, current + 1),
-                            )
-                          }
-                          disabled={
-                            allCapturedArticleMeta.current_page >= allCapturedArticleMeta.last_page
-                          }
-                          className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Next
-                        </button>
+                  {activeAdminCenterTab === "sources" ? (
+                    <>
+                      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <label className="text-sm font-medium text-stone-700">
+                          Search sources
+                          <input
+                            value={adminSourceQuery}
+                            onChange={(event) => setAdminSourceQuery(event.target.value)}
+                            className={inputClassName}
+                            placeholder="Search by source, key, homepage, or health note"
+                          />
+                        </label>
+                        <label className="text-sm font-medium text-stone-700">
+                          Status
+                          <select
+                            value={adminSourceStatusFilter}
+                            onChange={(event) =>
+                              setAdminSourceStatusFilter(
+                                event.target.value as
+                                  | "all"
+                                  | "working"
+                                  | "flaky"
+                                  | "broken"
+                                  | "premium-risk"
+                                  | "unindexed",
+                              )
+                            }
+                            className={inputClassName}
+                          >
+                            <option value="all">All statuses</option>
+                            <option value="working">Indexed / healthy</option>
+                            <option value="flaky">Indexed / issues</option>
+                            <option value="unindexed">Unindexed</option>
+                            <option value="broken">Broken</option>
+                            <option value="premium-risk">Premium risk</option>
+                          </select>
+                        </label>
                       </div>
-                    </div>
+
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {filteredAdminSources.length ? (
+                          filteredAdminSources.map((source) => (
+                            <article
+                              key={source.key}
+                              className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {source.key}
+                                    </span>
+                                    <span
+                                      className={`rounded-full px-3 py-1 ${getAdminSourceStatusClass(source.status)}`}
+                                    >
+                                      {source.status_label}
+                                    </span>
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {source.access}
+                                    </span>
+                                  </div>
+                                  <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {source.name}
+                                  </h4>
+                                  <p className="mt-2 text-sm leading-6 text-stone-500">
+                                    {source.notes}
+                                  </p>
+                                </div>
+                                <a
+                                  href={source.homepage}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                                >
+                                  Open source
+                                </a>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Articles
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {source.article_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Matches
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {source.matched_mentions_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Warnings
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {source.warning_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Freshness
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {source.freshness_hours === null
+                                      ? "N/A"
+                                      : `${Math.round(source.freshness_hours)}h`}
+                                  </strong>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  Discovery: {source.discovery_enabled ? "On" : "Off"}
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  Sitemaps: {source.sitemaps_enabled ? "On" : "Off"}
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  Feed: {source.has_feed_url ? "Configured" : "Auto"}
+                                </span>
+                                {source.feed_url ? (
+                                  <span className="rounded-full bg-white px-3 py-1">
+                                    Feed URL: {source.feed_url}
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <div className="mt-4 grid gap-3 text-sm text-stone-600 sm:grid-cols-2">
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Latest article
+                                  </p>
+                                  <p className="mt-2">
+                                    {source.latest_published_at
+                                      ? formatPublishedAt(source.latest_published_at)
+                                      : "Not indexed yet"}
+                                  </p>
+                                  <p className="mt-2 text-xs text-stone-500">
+                                    Last ingest:{" "}
+                                    {source.last_ingested_at
+                                      ? formatPublishedAt(source.last_ingested_at)
+                                      : "Pending"}
+                                  </p>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Latest keyword match
+                                  </p>
+                                  <p className="mt-2">
+                                    {source.latest_match_at
+                                      ? formatPublishedAt(source.latest_match_at)
+                                      : "No matched mention yet"}
+                                  </p>
+                                  <p className="mt-2 text-xs text-stone-500 break-all">
+                                    {source.homepage}
+                                  </p>
+                                </div>
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500 lg:col-span-2">
+                            No sources match the current admin search and status filter.
+                          </article>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeAdminCenterTab === "projects" ? (
+                    <>
+                      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <label className="text-sm font-medium text-stone-700">
+                          Search projects
+                          <input
+                            value={adminInventoryQuery}
+                            onChange={(event) => setAdminInventoryQuery(event.target.value)}
+                            className={inputClassName}
+                            placeholder="Search by project, owner, email, or status"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <span className="rounded-full border border-stone-200 bg-white px-3 py-3 text-xs font-semibold text-stone-500">
+                            {adminProjects.length} projects
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {adminProjects.length ? (
+                          adminProjects.map((project) => (
+                            <article
+                              key={project.id}
+                              className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {project.status}
+                                    </span>
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {project.slug}
+                                    </span>
+                                  </div>
+                                  <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {project.name}
+                                  </h4>
+                                  <p className="mt-2 text-sm text-stone-500">
+                                    Owner: {project.user.name ?? "Unknown"} ·{" "}
+                                    {project.user.email ?? "No email"}
+                                  </p>
+                                  <p className="mt-2 text-sm leading-6 text-stone-500">
+                                    {project.description ?? "No description saved for this project."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Keywords
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {project.tracked_keywords_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Mentions
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {project.mentions_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Updated
+                                  </p>
+                                  <p className="mt-2 text-sm text-stone-600">
+                                    {formatPublishedAt(project.updated_at)}
+                                  </p>
+                                </div>
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500 lg:col-span-2">
+                            No projects match the current admin search.
+                          </article>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeAdminCenterTab === "users" ? (
+                    <>
+                      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <label className="text-sm font-medium text-stone-700">
+                          Search users
+                          <input
+                            value={adminInventoryQuery}
+                            onChange={(event) => setAdminInventoryQuery(event.target.value)}
+                            className={inputClassName}
+                            placeholder="Search by name, email, role, or plan"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <span className="rounded-full border border-stone-200 bg-white px-3 py-3 text-xs font-semibold text-stone-500">
+                            {adminUsers.length} users
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {adminUsers.length ? (
+                          adminUsers.map((account) => (
+                            <article
+                              key={account.id}
+                              className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    {account.roles.map((role) => (
+                                      <span key={role} className="rounded-full bg-white px-3 py-1">
+                                        {role}
+                                      </span>
+                                    ))}
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {account.plan_name ?? "No plan"}
+                                    </span>
+                                  </div>
+                                  <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {account.name}
+                                  </h4>
+                                  <p className="mt-2 text-sm text-stone-500">{account.email}</p>
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Projects
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {account.projects_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Keywords
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {account.keywords_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Mentions
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {account.mentions_count}
+                                  </strong>
+                                </div>
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500 lg:col-span-2">
+                            No users match the current admin search.
+                          </article>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeAdminCenterTab === "keywords" ? (
+                    <>
+                      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <label className="text-sm font-medium text-stone-700">
+                          Search keywords
+                          <input
+                            value={adminInventoryQuery}
+                            onChange={(event) => setAdminInventoryQuery(event.target.value)}
+                            className={inputClassName}
+                            placeholder="Search by keyword, project, owner, platform, or match type"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <span className="rounded-full border border-stone-200 bg-white px-3 py-3 text-xs font-semibold text-stone-500">
+                            {adminKeywords.length} keywords
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {adminKeywords.length ? (
+                          adminKeywords.map((keyword) => (
+                            <article
+                              key={keyword.id}
+                              className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {keyword.platform}
+                                    </span>
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {keyword.match_type}
+                                    </span>
+                                    <span
+                                      className={`rounded-full px-3 py-1 ${
+                                        keyword.is_active
+                                          ? "bg-emerald-100 text-emerald-700"
+                                          : "bg-stone-200 text-stone-600"
+                                      }`}
+                                    >
+                                      {keyword.is_active ? "Active" : "Paused"}
+                                    </span>
+                                  </div>
+                                  <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {keyword.keyword}
+                                  </h4>
+                                  <p className="mt-2 text-sm text-stone-500">
+                                    Project: {keyword.project.name ?? "Unknown"} · Owner:{" "}
+                                    {keyword.user.name ?? "Unknown"}
+                                  </p>
+                                  <p className="mt-1 text-sm text-stone-500">
+                                    {keyword.user.email ?? "No email"}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Mentions
+                                  </p>
+                                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {keyword.mentions_count}
+                                  </strong>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                                  <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                    Updated
+                                  </p>
+                                  <p className="mt-2 text-sm text-stone-600">
+                                    {formatPublishedAt(keyword.updated_at)}
+                                  </p>
+                                </div>
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500 lg:col-span-2">
+                            No keywords match the current admin search.
+                          </article>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeAdminCenterTab === "indexes" ? (
+                    <>
+                      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <article className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5">
+                          <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                            Indexed sources
+                          </p>
+                          <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em] text-stone-950">
+                            {indexedSources}
+                          </strong>
+                          <p className="mt-2 text-sm text-stone-500">
+                            Out of {mediaCoverage?.summary.configured_sources ?? 0} configured
+                            sources.
+                          </p>
+                        </article>
+                        <article className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5">
+                          <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                            Archived articles
+                          </p>
+                          <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em] text-stone-950">
+                            {archiveArticles}
+                          </strong>
+                          <p className="mt-2 text-sm text-stone-500">
+                            Total captured maritime articles in the archive.
+                          </p>
+                        </article>
+                        <article className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5">
+                          <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                            Matched mentions
+                          </p>
+                          <strong className="mt-2 block text-3xl font-semibold tracking-[-0.04em] text-stone-950">
+                            {mediaCoverage?.summary.matched_mentions ?? 0}
+                          </strong>
+                          <p className="mt-2 text-sm text-stone-500">
+                            Mentions created from indexed media coverage.
+                          </p>
+                        </article>
+                        <article className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5">
+                          <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                            Freshest article
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-stone-900">
+                            {latestCapturedArticle?.title ?? "No captured article yet"}
+                          </p>
+                          <p className="mt-2 text-sm text-stone-500">
+                            {formatPublishedAt(latestCapturedArticle?.published_at ?? null)}
+                          </p>
+                        </article>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {coverageSources.map((source) => (
+                          <article
+                            key={source.key}
+                            className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                  <span
+                                    className={`rounded-full px-3 py-1 ${getAdminSourceStatusClass(source.status)}`}
+                                  >
+                                    {source.status_label}
+                                  </span>
+                                </div>
+                                <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                  {source.name}
+                                </h4>
+                              </div>
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                                {source.article_count} indexed
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm text-stone-500">
+                              Latest article:{" "}
+                              {source.latest_published_at
+                                ? formatPublishedAt(source.latest_published_at)
+                                : "Not indexed yet"}
+                            </p>
+                            <p className="mt-1 text-sm text-stone-500">
+                              Last ingest:{" "}
+                              {source.last_ingested_at
+                                ? formatPublishedAt(source.last_ingested_at)
+                                : "Pending"}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+
+                      <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                            Captured archive
+                          </p>
+                          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+                            All captured maritime articles
+                          </h3>
+                        </div>
+                        <span className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold text-stone-500">
+                          {allCapturedArticleMeta.total} archived articles
+                        </span>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <label className="text-sm font-medium text-stone-700">
+                          Search captured articles
+                          <input
+                            value={adminArticlesQuery}
+                            onChange={(event) => setAdminArticlesQuery(event.target.value)}
+                            className={inputClassName}
+                            placeholder="Search titles, body text, source, author, or URL"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              token && void loadCapturedArticles(token, 1, adminArticlesQuery)
+                            }
+                            disabled={isPending}
+                            className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Refresh list
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 space-y-4">
+                        {allCapturedArticleItems.length ? (
+                          allCapturedArticleItems.map((article) => (
+                            <article
+                              key={article.id}
+                              className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div>
+                                  <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {article.source_name}
+                                    </span>
+                                    <span className="rounded-full bg-white px-3 py-1">
+                                      {formatPublishedAt(article.published_at)}
+                                    </span>
+                                  </div>
+                                  <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                    {article.title}
+                                  </h4>
+                                </div>
+                                {article.url ? (
+                                  <a
+                                    href={article.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                                  >
+                                    Visit article
+                                  </a>
+                                ) : null}
+                              </div>
+
+                              <p className="mt-3 text-sm leading-6 text-stone-600">
+                                {article.body}
+                              </p>
+
+                              <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  Source key: {article.source_key}
+                                </span>
+                                {article.author_name ? (
+                                  <span className="rounded-full bg-white px-3 py-1">
+                                    Author: {article.author_name}
+                                  </span>
+                                ) : null}
+                                {article.source_url ? (
+                                  <span className="rounded-full bg-white px-3 py-1">
+                                    Home: {article.source_url}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500">
+                            No captured articles match the current archive search.
+                          </article>
+                        )}
+                      </div>
+
+                      {allCapturedArticleMeta.last_page > 1 ? (
+                        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-sm text-stone-500">
+                            Page {allCapturedArticleMeta.current_page} of{" "}
+                            {allCapturedArticleMeta.last_page}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAdminArticlesPage((current) => Math.max(1, current - 1))
+                              }
+                              disabled={allCapturedArticleMeta.current_page <= 1}
+                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAdminArticlesPage((current) =>
+                                  Math.min(allCapturedArticleMeta.last_page, current + 1),
+                                )
+                              }
+                              disabled={
+                                allCapturedArticleMeta.current_page >=
+                                allCapturedArticleMeta.last_page
+                              }
+                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </article>
               ) : null}

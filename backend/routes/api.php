@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AdminMediaArticleController;
 use App\Http\Controllers\Api\AdminMediaCaptureController;
 use App\Http\Controllers\Api\AdminMediaCoverageController;
+use App\Http\Controllers\Api\AdminWorkspaceController;
 use App\Http\Controllers\Api\AlertChannelController;
 use App\Http\Controllers\Api\AlertInboxController;
 use App\Http\Controllers\Api\AuthController;
@@ -33,6 +34,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('alerts/channels/{alertChannel}', [AlertChannelController::class, 'destroy']);
     Route::get('alerts/inbox', [AlertInboxController::class, 'index']);
     Route::patch('alerts/inbox/{alertDelivery}/read', [AlertInboxController::class, 'markRead']);
+    Route::get('admin/workspace', AdminWorkspaceController::class);
     Route::get('admin/media-articles', AdminMediaArticleController::class);
     Route::post('admin/media-capture', AdminMediaCaptureController::class);
     Route::get('admin/media-coverage', AdminMediaCoverageController::class);
