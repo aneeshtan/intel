@@ -213,6 +213,65 @@ class MediaDiscoveryTest extends TestCase
         ], $allowedUrls);
     }
 
+    public function test_parse_feed_accepts_utf8_bom_prefixed_rss(): void
+    {
+        $service = app(MediaMentionIngestionService::class);
+        $parseFeed = new \ReflectionMethod($service, 'parseFeed');
+        $parseFeed->setAccessible(true);
+
+        $items = $parseFeed->invoke(
+            $service,
+            "\xEF\xBB\xBF".<<<'XML'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>MPA Media Releases</title>
+                <item>
+                  <title>Strengthening maritime competitiveness and operational excellence</title>
+                  <link>https://feeds.example.test/media-centre/details/strengthening-maritime-competitiveness</link>
+                  <description>Policy update.</description>
+                  <pubDate>Wed, 18 Mar 2026 10:00:00 GMT</pubDate>
+                </item>
+              </channel>
+            </rss>
+            XML
+        );
+
+        $this->assertCount(1, $items);
+        $this->assertSame(
+            'https://feeds.example.test/media-centre/details/strengthening-maritime-competitiveness',
+            $items->first()['url'] ?? null,
+        );
+    }
+
+    public function test_source_can_allow_document_urls_for_feed_excerpt_indexing(): void
+    {
+        $service = app(MediaMentionIngestionService::class);
+        $looksLikeArticleCandidate = new \ReflectionMethod($service, 'looksLikeArticleCandidate');
+        $looksLikeArticleCandidate->setAccessible(true);
+
+        $candidate = [
+            'url' => 'https://porthouston.com/wp-content/uploads/2026/03/Port-Houston-Volumes-Up-4-in-February.pdf#new_tab',
+            'title' => 'Port Houston Volumes Up 4% in February',
+        ];
+
+        $blockedSource = [
+            'include_url_patterns' => [
+                '#^https://porthouston\.com/.+#i',
+            ],
+        ];
+
+        $allowedSource = [
+            'include_url_patterns' => [
+                '#^https://porthouston\.com/.+#i',
+            ],
+            'allow_document_urls' => true,
+        ];
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, $candidate, $blockedSource));
+        $this->assertTrue($looksLikeArticleCandidate->invoke($service, $candidate, $allowedSource));
+    }
+
     public function test_fetch_media_article_job_stores_article_and_creates_mentions(): void
     {
         $this->seedBase();

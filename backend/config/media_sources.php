@@ -331,6 +331,7 @@ return [
             'homepage' => 'https://www.mpa.gov.sg/media-centre',
             'feed_url' => 'https://www.mpa.gov.sg/feeds/media-releases',
             'disable_sitemaps' => true,
+            'excerpt_only' => true,
             'include_url_patterns' => [
                 '#^https://www\.mpa\.gov\.sg/media-centre/details/[^/?#]+#i',
             ],
@@ -347,8 +348,10 @@ return [
             'homepage' => 'https://porthouston.com/',
             'feed_url' => 'https://porthouston.com/feed/',
             'disable_sitemaps' => true,
+            'excerpt_only' => true,
+            'allow_document_urls' => true,
             'include_url_patterns' => [
-                '#^https://porthouston\.com/(?!wp-content/uploads/).+#i',
+                '#^https://porthouston\.com/.+#i',
             ],
         ],
     ],

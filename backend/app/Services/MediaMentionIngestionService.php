@@ -1045,8 +1045,9 @@ class MediaMentionIngestionService
 
     private function loadXml(string $xml): ?\SimpleXMLElement
     {
+        $xml = $this->normalizeXmlString($xml);
         $previous = libxml_use_internal_errors(true);
-        $document = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOCDATA);
+        $document = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_PARSEHUGE);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
 
@@ -1171,6 +1172,10 @@ class MediaMentionIngestionService
             }
         }
 
+        if (! empty($source['allow_document_urls'])) {
+            return ! preg_match('/\.(jpg|jpeg|png|gif|webp|xml)$/i', $path);
+        }
+
         return ! preg_match('/\.(jpg|jpeg|png|gif|webp|pdf|xml)$/i', $path);
     }
 
@@ -1244,11 +1249,16 @@ class MediaMentionIngestionService
 
     private function isXmlFeed(string $value): bool
     {
-        $trimmed = ltrim($value);
+        $trimmed = ltrim($this->normalizeXmlString($value));
 
         return str_starts_with($trimmed, '<?xml')
             || str_starts_with($trimmed, '<rss')
             || str_starts_with($trimmed, '<feed');
+    }
+
+    private function normalizeXmlString(string $value): string
+    {
+        return preg_replace('/^\xEF\xBB\xBF/', '', $value) ?? $value;
     }
 
     private function httpClient()
