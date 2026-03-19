@@ -3345,6 +3345,23 @@ export function IqxIntelligenceApp() {
                     </p>
                   </article>
                 </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveWorkspaceTab("profile")}
+                    className="rounded-full bg-stone-950 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-800"
+                  >
+                    Open profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                  >
+                    Sign out
+                  </button>
+                </div>
               </article>
 
               <article className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
