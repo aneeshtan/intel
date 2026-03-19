@@ -6,6 +6,18 @@ const TOKEN_KEY = "iqx-intelligence-token";
 const inputClassName =
   "mt-2 w-full rounded-2xl border border-stone-200 bg-white/90 px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-400";
 
+function getAdminSourceStatusClass(status: string) {
+  return status === "working"
+    ? "bg-emerald-100 text-emerald-700"
+    : status === "flaky"
+      ? "bg-amber-100 text-amber-700"
+      : status === "broken"
+        ? "bg-rose-100 text-rose-700"
+        : status === "premium-risk"
+          ? "bg-violet-100 text-violet-700"
+          : "bg-stone-200 text-stone-700";
+}
+
 const overviewStats = [
   {
     label: "Signals captured today",
@@ -150,20 +162,38 @@ type MediaCoverage = {
     archive_articles: number;
     matched_mentions: number;
     archive_window_days: number;
+    audit_window_days: number;
     oldest_published_at: string | null;
     newest_published_at: string | null;
+    working_sources: number;
+    flaky_sources: number;
+    broken_sources: number;
+    premium_risk_sources: number;
+    pending_sources: number;
   };
   sources: {
     key: string;
     name: string;
     homepage: string;
     status: string;
+    status_label: string;
+    access: string;
+    notes: string;
     article_count: number;
     matched_mentions_count: number;
+    warning_count: number;
+    discovery_enabled: boolean;
+    sitemaps_enabled: boolean;
+    has_feed_url: boolean;
+    feed_url: string | null;
+    include_url_patterns: string[];
+    exclude_url_patterns: string[];
+    exclude_title_patterns: string[];
     earliest_published_at: string | null;
     latest_published_at: string | null;
     latest_match_at: string | null;
     last_ingested_at: string | null;
+    freshness_hours: number | null;
   }[];
 };
 
@@ -1277,6 +1307,10 @@ export function IqxIntelligenceApp() {
   const [updatingMentionId, setUpdatingMentionId] = useState<number | null>(null);
   const [adminArticlesQuery, setAdminArticlesQuery] = useState("");
   const [adminArticlesPage, setAdminArticlesPage] = useState(1);
+  const [adminSourceQuery, setAdminSourceQuery] = useState("");
+  const [adminSourceStatusFilter, setAdminSourceStatusFilter] = useState<
+    "all" | "working" | "flaky" | "broken" | "premium-risk" | "pending"
+  >("all");
   const [keywordForm, setKeywordForm] = useState({
     keyword: "",
     platform: "all",
@@ -2543,6 +2577,18 @@ export function IqxIntelligenceApp() {
   const indexedSources = mediaCoverage?.summary.indexed_sources ?? 0;
   const archiveArticles = mediaCoverage?.summary.archive_articles ?? 0;
   const coverageSources = mediaCoverage?.sources.slice(0, 6) ?? [];
+  const filteredAdminSources = (mediaCoverage?.sources ?? []).filter((source) => {
+    const normalizedQuery = adminSourceQuery.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery === "" ||
+      `${source.name} ${source.key} ${source.homepage} ${source.notes} ${source.status_label}`
+        .toLowerCase()
+        .includes(normalizedQuery);
+    const matchesStatus =
+      adminSourceStatusFilter === "all" || source.status === adminSourceStatusFilter;
+
+    return matchesQuery && matchesStatus;
+  });
   const allCapturedArticleItems = capturedArticles?.items ?? [];
   const allCapturedArticleMeta = capturedArticles?.meta ?? {
     current_page: 1,
@@ -2609,7 +2655,7 @@ export function IqxIntelligenceApp() {
     },
     { key: "analysis", label: "Analytics" },
     { key: "sources", label: "Influencers & Sources" },
-    ...(isAdmin ? [{ key: "articles" as WorkspaceTab, label: "All Captured Articles" }] : []),
+    ...(isAdmin ? [{ key: "articles" as WorkspaceTab, label: "Admin Center" }] : []),
     { key: "profile", label: "Profile" },
     { key: "keywords", label: "Keywords" },
     { key: "projects", label: "Projects" },
@@ -2649,9 +2695,9 @@ export function IqxIntelligenceApp() {
     },
     articles: {
       eyebrow: "Active view",
-      title: "Captured article archive",
+      title: "Admin center",
       description:
-        "Browse the full captured news archive across all monitored sources, independent of project-level keyword matches.",
+        "Manage the monitored source inventory, see which sources are indexed, and inspect the captured archive from one admin-only workspace.",
     },
     profile: {
       eyebrow: "Active view",
@@ -3092,23 +3138,39 @@ export function IqxIntelligenceApp() {
                       </p>
                     </div>
 
-                    <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
-                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                          Captured articles
-                        </p>
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Indexed</p>
                         <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
-                          {allCapturedArticleMeta.total}
+                          {indexedSources}
                         </strong>
                         <p className="mt-2 text-sm leading-6 text-stone-500">
-                          Total archived articles available to the admin archive view.
+                          Sources with at least one captured article.
                         </p>
                       </article>
 
                       <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
-                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
-                          Latest article
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Broken</p>
+                        <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
+                          {mediaCoverage?.summary.broken_sources ?? 0}
+                        </strong>
+                        <p className="mt-2 text-sm leading-6 text-stone-500">
+                          Sources with repeated failures and no indexed coverage.
                         </p>
+                      </article>
+
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Archive articles</p>
+                        <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
+                          {allCapturedArticleMeta.total}
+                        </strong>
+                        <p className="mt-2 text-sm leading-6 text-stone-500">
+                          Total captured articles available in the admin archive.
+                        </p>
+                      </article>
+
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                        <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Latest article</p>
                         <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
                           {latestCapturedArticle?.title ?? "No archived article yet"}
                         </strong>
@@ -4747,7 +4809,198 @@ export function IqxIntelligenceApp() {
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                        Admin archive
+                        Admin center
+                      </p>
+                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+                        Source inventory
+                      </h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
+                        {mediaCoverage?.summary.working_sources ?? 0} healthy
+                      </span>
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                        {mediaCoverage?.summary.flaky_sources ?? 0} flaky
+                      </span>
+                      <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700">
+                        {mediaCoverage?.summary.broken_sources ?? 0} broken
+                      </span>
+                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-500">
+                        {mediaCoverage?.summary.pending_sources ?? 0} pending
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <label className="text-sm font-medium text-stone-700">
+                      Search sources
+                      <input
+                        value={adminSourceQuery}
+                        onChange={(event) => setAdminSourceQuery(event.target.value)}
+                        className={inputClassName}
+                        placeholder="Search by source, key, homepage, or health note"
+                      />
+                    </label>
+                    <label className="text-sm font-medium text-stone-700">
+                      Status
+                      <select
+                        value={adminSourceStatusFilter}
+                        onChange={(event) =>
+                          setAdminSourceStatusFilter(
+                            event.target.value as
+                              | "all"
+                              | "working"
+                              | "flaky"
+                              | "broken"
+                              | "premium-risk"
+                              | "pending",
+                          )
+                        }
+                        className={inputClassName}
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="working">Indexed / healthy</option>
+                        <option value="flaky">Indexed / issues</option>
+                        <option value="broken">Broken</option>
+                        <option value="pending">Pending</option>
+                        <option value="premium-risk">Premium risk</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                    {filteredAdminSources.length ? (
+                      filteredAdminSources.map((source) => (
+                        <article
+                          key={source.key}
+                          className="rounded-[1.4rem] border border-stone-200 bg-stone-50/90 p-5"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                <span className="rounded-full bg-white px-3 py-1">{source.key}</span>
+                                <span
+                                  className={`rounded-full px-3 py-1 ${getAdminSourceStatusClass(source.status)}`}
+                                >
+                                  {source.status_label}
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1">
+                                  {source.access}
+                                </span>
+                              </div>
+                              <h4 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                                {source.name}
+                              </h4>
+                              <p className="mt-2 text-sm leading-6 text-stone-500">{source.notes}</p>
+                            </div>
+                            <a
+                              href={source.homepage}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                            >
+                              Open source
+                            </a>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                Articles
+                              </p>
+                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                {source.article_count}
+                              </strong>
+                            </div>
+                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                Matches
+                              </p>
+                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                {source.matched_mentions_count}
+                              </strong>
+                            </div>
+                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                Warnings
+                              </p>
+                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                {source.warning_count}
+                              </strong>
+                            </div>
+                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                Freshness
+                              </p>
+                              <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                                {source.freshness_hours === null
+                                  ? "N/A"
+                                  : `${Math.round(source.freshness_hours)}h`}
+                              </strong>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
+                            <span className="rounded-full bg-white px-3 py-1">
+                              Discovery: {source.discovery_enabled ? "On" : "Off"}
+                            </span>
+                            <span className="rounded-full bg-white px-3 py-1">
+                              Sitemaps: {source.sitemaps_enabled ? "On" : "Off"}
+                            </span>
+                            <span className="rounded-full bg-white px-3 py-1">
+                              Feed: {source.has_feed_url ? "Configured" : "Auto"}
+                            </span>
+                            {source.feed_url ? (
+                              <span className="rounded-full bg-white px-3 py-1">
+                                Feed URL: {source.feed_url}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-4 grid gap-3 text-sm text-stone-600 sm:grid-cols-2">
+                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                Latest article
+                              </p>
+                              <p className="mt-2">
+                                {source.latest_published_at
+                                  ? formatPublishedAt(source.latest_published_at)
+                                  : "Not indexed yet"}
+                              </p>
+                              <p className="mt-2 text-xs text-stone-500">
+                                Last ingest:{" "}
+                                {source.last_ingested_at
+                                  ? formatPublishedAt(source.last_ingested_at)
+                                  : "Pending"}
+                              </p>
+                            </div>
+                            <div className="rounded-[1.1rem] border border-stone-200 bg-white p-4">
+                              <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
+                                Latest keyword match
+                              </p>
+                              <p className="mt-2">
+                                {source.latest_match_at
+                                  ? formatPublishedAt(source.latest_match_at)
+                                  : "No matched mention yet"}
+                              </p>
+                              <p className="mt-2 text-xs text-stone-500 break-all">
+                                {source.homepage}
+                              </p>
+                            </div>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <article className="rounded-[1.4rem] border border-dashed border-stone-200 bg-stone-50/90 px-5 py-8 text-sm text-stone-500 lg:col-span-2">
+                        No sources match the current admin search and status filter.
+                      </article>
+                    )}
+                  </div>
+
+                  <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                        Captured archive
                       </p>
                       <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
                         All captured maritime articles

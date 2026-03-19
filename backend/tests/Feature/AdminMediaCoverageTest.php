@@ -81,17 +81,26 @@ class AdminMediaCoverageTest extends TestCase
 
         Sanctum::actingAs($admin);
 
-        $this->getJson('/api/admin/media-coverage')
+        $response = $this->getJson('/api/admin/media-coverage')
             ->assertOk()
             ->assertJsonPath('data.summary.configured_sources', 2)
             ->assertJsonPath('data.summary.indexed_sources', 1)
             ->assertJsonPath('data.summary.archive_articles', 1)
             ->assertJsonPath('data.summary.matched_mentions', 1)
-            ->assertJsonPath('data.sources.0.key', 'alpha')
-            ->assertJsonPath('data.sources.0.article_count', 1)
-            ->assertJsonPath('data.sources.0.matched_mentions_count', 1)
-            ->assertJsonPath('data.sources.1.key', 'beta')
-            ->assertJsonPath('data.sources.1.article_count', 0);
+            ->assertJsonPath('data.summary.working_sources', 1)
+            ->assertJsonPath('data.summary.pending_sources', 1);
+
+        $sources = collect($response->json('data.sources'))->keyBy('key');
+
+        $this->assertSame('working', $sources['alpha']['status']);
+        $this->assertSame('Indexed', $sources['alpha']['status_label']);
+        $this->assertSame(1, $sources['alpha']['article_count']);
+        $this->assertSame(1, $sources['alpha']['matched_mentions_count']);
+        $this->assertTrue($sources['alpha']['discovery_enabled']);
+
+        $this->assertSame('pending', $sources['beta']['status']);
+        $this->assertSame('Pending', $sources['beta']['status_label']);
+        $this->assertSame(0, $sources['beta']['article_count']);
     }
 
     public function test_non_admin_cannot_view_media_coverage(): void
