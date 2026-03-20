@@ -59,6 +59,27 @@ class ProjectMentionController extends Controller
         ]);
     }
 
+    public function exclude(Project $project, Mention $mention): JsonResponse
+    {
+        $this->ensureOwnership($project);
+        abort_unless($mention->project_id === $project->id, 404);
+
+        $metadata = (array) ($mention->metadata ?? []);
+
+        $mention->forceFill([
+            'metadata' => [
+                ...$metadata,
+                'excluded' => true,
+                'excluded_at' => now()->toIso8601String(),
+            ],
+        ])->save();
+
+        return response()->json([
+            'message' => 'Mention excluded from this project successfully.',
+            'data' => $mention->fresh()->load('trackedKeyword:id,keyword'),
+        ]);
+    }
+
     private function ensureOwnership(Project $project): void
     {
         abort_unless($project->user_id === request()->user()->id, 404);

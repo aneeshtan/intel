@@ -402,6 +402,69 @@ class ProjectApiTest extends TestCase
             ->assertJsonPath('data.metadata.sentiment_source', 'system');
     }
 
+    public function test_authenticated_user_can_exclude_a_mention_from_their_project(): void
+    {
+        $this->seed([
+            PermissionsTableSeeder::class,
+            RolesTableSeeder::class,
+            ConnectRelationshipsSeeder::class,
+            PlanSeeder::class,
+        ]);
+
+        $user = User::factory()->create();
+        $role = config('roles.models.role')::query()->where('slug', 'user')->first();
+        $user->attachRole($role);
+
+        $project = $user->projects()->create([
+            'name' => 'BlueWave Watch',
+            'slug' => 'bluewave-watch',
+            'description' => 'Tracks BlueWave coverage.',
+            'audience' => 'Operators',
+            'status' => 'active',
+            'monitored_platforms' => ['media'],
+        ]);
+
+        $keyword = $project->trackedKeywords()->create([
+            'keyword' => 'BlueWave',
+            'platform' => 'media',
+            'match_type' => 'phrase',
+            'is_active' => true,
+        ]);
+
+        $mention = Mention::query()->create([
+            'project_id' => $project->id,
+            'tracked_keyword_id' => $keyword->id,
+            'source' => 'media',
+            'external_id' => 'bluewave-mention',
+            'author_name' => 'Editorial Desk',
+            'url' => 'https://theloadstar.com/sample-story',
+            'title' => 'BlueWave expands network',
+            'body' => 'BlueWave has expanded its service coverage.',
+            'sentiment' => 'neutral',
+            'published_at' => now(),
+            'metadata' => [
+                'source_name' => 'The Loadstar',
+                'source_domain' => 'theloadstar.com',
+                'demo' => false,
+            ],
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson("/api/projects/{$project->id}/mentions/{$mention->id}/exclude")
+            ->assertOk()
+            ->assertJsonPath('message', 'Mention excluded from this project successfully.')
+            ->assertJsonPath('data.metadata.excluded', true);
+
+        $this->getJson("/api/projects/{$project->id}")
+            ->assertOk()
+            ->assertJsonPath('data.mentions_count', 0);
+
+        $this->assertDatabaseHas('mentions', [
+            'id' => $mention->id,
+        ]);
+    }
+
     public function test_media_ingest_command_backfills_recent_articles_and_generates_mentions(): void
     {
         $this->fakeMediaFeeds();

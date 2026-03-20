@@ -78,12 +78,19 @@ class ProjectListeningController extends Controller
             ->with('trackedKeyword:id,keyword')
             ->latest('published_at')
             ->get();
+        $activeMentions = $mentions
+            ->filter(function ($mention): bool {
+                $metadata = (array) ($mention->metadata ?? []);
+
+                return ! ((bool) ($metadata['excluded'] ?? false));
+            })
+            ->values();
 
         $muted = $project->mutedEntities()->get(['kind', 'value']);
         $mutedSources = $muted->where('kind', 'source')->pluck('value')->values();
         $mutedAuthors = $muted->where('kind', 'author')->pluck('value')->values();
 
-        $visibleMentions = $mentions->filter(function ($mention) use ($mutedSources, $mutedAuthors): bool {
+        $visibleMentions = $activeMentions->filter(function ($mention) use ($mutedSources, $mutedAuthors): bool {
             $sourceDomain = self::extractSourceDomain($mention);
             $author = self::normalize($mention->author_name);
 
@@ -94,8 +101,8 @@ class ProjectListeningController extends Controller
         return [
             'mentions' => $visibleMentions->take(20)->values(),
             'mentions_count' => $visibleMentions->count(),
-            'source_groups' => self::groupSources($mentions, $mutedSources),
-            'influencer_groups' => self::groupInfluencers($mentions, $mutedAuthors),
+            'source_groups' => self::groupSources($activeMentions, $mutedSources),
+            'influencer_groups' => self::groupInfluencers($activeMentions, $mutedAuthors),
             'muted_sources' => $mutedSources,
             'muted_authors' => $mutedAuthors,
         ];

@@ -38,7 +38,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('admin/workspace', AdminWorkspaceController::class);
     Route::get('admin/indexing-status', [AdminIndexingStatusController::class, 'show']);
     Route::patch('admin/indexing-status', [AdminIndexingStatusController::class, 'update']);
-    Route::get('admin/media-articles', AdminMediaArticleController::class);
+    Route::get('admin/media-articles', [AdminMediaArticleController::class, 'index']);
+    Route::delete('admin/media-articles/{mediaArticle}', [AdminMediaArticleController::class, 'destroy']);
     Route::post('admin/media-capture', AdminMediaCaptureController::class);
     Route::get('admin/media-coverage', AdminMediaCoverageController::class);
 
@@ -47,6 +48,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::apiResource('projects', ProjectController::class);
     Route::patch('projects/{project}/mentions/{mention}', [ProjectMentionController::class, 'update']);
+    Route::post('projects/{project}/mentions/{mention}/exclude', [ProjectMentionController::class, 'exclude']);
     Route::post('projects/{project}/sources/mute', [ProjectListeningController::class, 'muteSource']);
     Route::delete('projects/{project}/sources/mute/{domain}', [ProjectListeningController::class, 'unmuteSource']);
     Route::post('projects/{project}/influencers/mute', [ProjectListeningController::class, 'muteInfluencer']);

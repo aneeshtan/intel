@@ -2164,6 +2164,76 @@ export function IqxIntelligenceApp() {
     });
   };
 
+  const handleExcludeMention = (mentionId: number, mentionTitle: string) => {
+    if (!token || !selectedProjectId) {
+      return;
+    }
+
+    if (!window.confirm(`Exclude "${mentionTitle}" from this project's mentions?`)) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await apiRequest<{ message: string }>(
+          `/projects/${selectedProjectId}/mentions/${mentionId}/exclude`,
+          {
+            method: "POST",
+          },
+          token,
+        );
+
+        setFlashMessage(response.message);
+        await hydrateSession(token, selectedProjectId);
+        setBootError(null);
+      } catch (error) {
+        setBootError(
+          error instanceof Error ? error.message : "Mention could not be excluded.",
+        );
+      }
+    });
+  };
+
+  const handleDeleteCapturedArticle = (article: CapturedArticle) => {
+    if (!token) {
+      return;
+    }
+
+    if (!window.confirm(`Delete "${article.title}" from the captured article archive?`)) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await apiRequest<{
+          message: string;
+          data: { deleted_mentions: number };
+        }>(
+          `/admin/media-articles/${article.id}`,
+          {
+            method: "DELETE",
+          },
+          token,
+        );
+
+        await refreshAdminArchive(token, adminArticlesPage, adminArticlesQuery);
+        if (selectedProjectId) {
+          await loadProjectDetail(token, selectedProjectId);
+        }
+        setFlashMessage(
+          response.data.deleted_mentions > 0
+            ? `${response.message} ${response.data.deleted_mentions} linked mention(s) were removed too.`
+            : response.message,
+        );
+        setBootError(null);
+      } catch (error) {
+        setBootError(
+          error instanceof Error ? error.message : "Captured article could not be deleted.",
+        );
+      }
+    });
+  };
+
   const handleUnmuteInfluencer = (author: string) => {
     if (!token || !selectedProjectId) {
       return;
@@ -3887,6 +3957,16 @@ export function IqxIntelligenceApp() {
                                 className="w-full rounded-full border border-stone-300 px-4 py-2 text-center font-semibold text-stone-700 transition-colors hover:border-stone-500 hover:text-stone-950 sm:w-auto sm:rounded-none sm:border-0 sm:px-0 sm:py-0 sm:text-left"
                               >
                                 Add to PDF report
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleExcludeMention(mention.id, mention.title ?? "this mention")
+                                }
+                                disabled={isPending}
+                                className="w-full rounded-full border border-amber-200 px-4 py-2 text-center font-semibold text-amber-700 transition-colors hover:border-amber-400 hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:rounded-none sm:border-0 sm:px-0 sm:py-0 sm:text-left"
+                              >
+                                Exclude from my mentions
                               </button>
                             </div>
                           </article>
@@ -5996,6 +6076,14 @@ export function IqxIntelligenceApp() {
                                     Visit article
                                   </a>
                                 ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCapturedArticle(article)}
+                                  disabled={isPending}
+                                  className="rounded-full border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 transition-colors hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Delete article
+                                </button>
                               </div>
 
                               <p className="mt-3 text-sm leading-6 text-stone-600">

@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\MediaArticle;
+use App\Models\Mention;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
 class AdminMediaArticleController extends Controller
 {
-    public function __invoke(): JsonResponse
+    public function index(): JsonResponse
     {
         /** @var User $user */
         $user = request()->user();
@@ -54,6 +55,28 @@ class AdminMediaArticleController extends Controller
                     'total' => $articles->total(),
                 ],
                 'query' => $search !== '' ? $search : null,
+            ],
+        ]);
+    }
+
+    public function destroy(MediaArticle $mediaArticle): JsonResponse
+    {
+        /** @var User $user */
+        $user = request()->user();
+
+        abort_unless($user && $user->hasRole('admin'), 403, 'Admin access is required.');
+
+        $deletedMentions = Mention::query()
+            ->where('source', 'media')
+            ->where('metadata->article_id', $mediaArticle->id)
+            ->delete();
+
+        $mediaArticle->delete();
+
+        return response()->json([
+            'message' => 'Captured article deleted successfully.',
+            'data' => [
+                'deleted_mentions' => $deletedMentions,
             ],
         ]);
     }
