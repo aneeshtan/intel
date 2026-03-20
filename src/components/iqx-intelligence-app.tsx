@@ -3651,6 +3651,19 @@ export function IqxIntelligenceApp() {
                       </p>
                     </article>
                   </>
+                ) : activeWorkspaceTab === "new-project" ? (
+                  <div className="max-w-2xl">
+                    <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                      {currentTabCopy.eyebrow}
+                    </p>
+                    <h3 className="mt-2 text-[1.65rem] font-semibold tracking-[-0.04em] sm:text-[2rem]">
+                      {currentTabCopy.title}
+                    </h3>
+                    <p className="mt-3 text-sm leading-6 text-stone-500">
+                      Start with the keywords you want to monitor. The first keyword becomes the
+                      project name automatically.
+                    </p>
+                  </div>
                 ) : activeWorkspaceTab === "profile" ? (
                   <>
                     <div className="flex flex-wrap items-start justify-between gap-4">
