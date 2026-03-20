@@ -91,7 +91,7 @@ return [
                 '~^https://container-news\.com/[^/?#]+/?$~i',
             ],
             'exclude_url_patterns' => [
-                '#^https://container-news\.com/(?:top-right|cn-index|scfi|ccfi|ningbo-containerized-freight-index)(?:/|$)#i',
+                '#^https://container-news\.com/(?:top-right|cn-index|scfi|ccfi|ningbo-containerized-freight-index|mergers-and-acquisitions)(?:/|$)#i',
             ],
         ],
         [
@@ -219,6 +219,9 @@ return [
             'key' => 'offshore-energy',
             'name' => 'Offshore Energy',
             'homepage' => 'https://www.offshore-energy.biz/',
+            'exclude_url_patterns' => [
+                '~^https://www\.offshore-energy\.biz/region/[^/?#]+/?$~i',
+            ],
         ],
         [
             'key' => 'lloyds-list',

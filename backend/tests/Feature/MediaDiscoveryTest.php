@@ -139,6 +139,23 @@ class MediaDiscoveryTest extends TestCase
         ], $source));
     }
 
+    public function test_offshore_energy_filters_region_archive_pages(): void
+    {
+        $service = app(MediaMentionIngestionService::class);
+        $looksLikeArticleCandidate = new \ReflectionMethod($service, 'looksLikeArticleCandidate');
+        $looksLikeArticleCandidate->setAccessible(true);
+
+        $source = collect(config('media_sources.sources'))
+            ->firstWhere('key', 'offshore-energy');
+
+        $this->assertNotNull($source);
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://www.offshore-energy.biz/region/south-central-asia/',
+            'title' => 'South and Central Asia Archives',
+        ], $source));
+    }
+
     public function test_media_discovery_discovers_sitemaps_from_the_site_root_for_path_based_sources(): void
     {
         Bus::fake();
