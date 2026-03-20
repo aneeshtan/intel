@@ -3178,87 +3178,40 @@ export function IqxIntelligenceApp() {
     <main className="min-h-screen overflow-hidden bg-[var(--canvas)] text-stone-950">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[36rem] bg-[radial-gradient(circle_at_top,_rgba(196,181,253,0.22),_transparent_38%),radial-gradient(circle_at_25%_30%,_rgba(125,211,252,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(251,191,36,0.16),_transparent_24%)]" />
 
-      <div className="sticky top-0 z-30 mx-auto max-w-7xl px-4 pt-4 sm:px-10 sm:pt-6 lg:px-12">
-        <header className="rounded-[1.75rem] border border-white/60 bg-white/82 px-4 py-4 shadow-[0_12px_40px_rgba(15,23,42,0.06)] backdrop-blur sm:px-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-xs tracking-[0.28em] text-stone-500 uppercase">
-                Maritime Media Monitoring
-              </p>
-              <h1 className="mt-1 text-lg font-semibold tracking-[-0.03em]">IQX Intelligence</h1>
-              {profile ? (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-stone-500">
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                    {currentProject?.name ?? "No project selected"}
-                  </span>
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                    {profile.plan?.name ?? "No Plan"}
-                  </span>
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                    {trackedKeywords.length} keywords
-                  </span>
-                </div>
-              ) : null}
-            </div>
+      <div className="sticky top-0 z-30 w-full px-3 pt-3 sm:px-6 sm:pt-4 lg:px-8">
+        <header className="w-full rounded-[1.5rem] border border-white/60 bg-white/86 px-4 py-3 shadow-[0_12px_36px_rgba(15,23,42,0.05)] backdrop-blur sm:px-5">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <h1 className="text-base font-semibold tracking-[-0.03em] text-stone-950 sm:text-lg">
+              IQX Intelligence
+            </h1>
 
-            {profile ? null : (
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                  LinkedIn
-                </span>
-                <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                  Reddit
-                </span>
-                <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                  X
-                </span>
-                <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1">
-                  Media Search
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setAuthMode("login")}
-                  className="rounded-full border border-stone-300 px-4 py-2 font-semibold text-stone-700 transition-colors hover:border-stone-500"
-                >
-                  Login
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuthMode("register")}
-                  className="rounded-full bg-stone-950 px-4 py-2 font-semibold text-stone-50 transition-transform hover:-translate-y-0.5"
-                >
-                  Register
-                </button>
-              </div>
-            )}
+            <nav className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto text-sm text-stone-600 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-3">
+              {profile
+                ? headerWorkspaceTabs.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setActiveWorkspaceTab(item.key)}
+                      className={`shrink-0 rounded-full px-3 py-2 transition-colors ${
+                        activeWorkspaceTab === item.key
+                          ? "bg-stone-950 text-stone-50"
+                          : "text-stone-600 hover:bg-stone-100 hover:text-stone-950"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))
+                : anonymousNavItems.map((item) => (
+                    <a
+                      key={item.key}
+                      href={item.href}
+                      className="shrink-0 rounded-full px-3 py-2 transition-colors hover:bg-stone-100 hover:text-stone-950"
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+            </nav>
           </div>
-
-          <nav className="mt-4 flex w-full flex-nowrap items-center gap-2 overflow-x-auto rounded-[1.4rem] border border-stone-200/80 bg-stone-50/90 p-2 text-sm text-stone-600 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-3">
-            {profile
-              ? headerWorkspaceTabs.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab(item.key)}
-                    className={`shrink-0 rounded-full px-3 py-2 transition-colors ${
-                      activeWorkspaceTab === item.key
-                        ? "bg-stone-950 text-stone-50"
-                        : "bg-white text-stone-600 hover:bg-stone-100 hover:text-stone-950"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))
-              : anonymousNavItems.map((item) => (
-                  <a
-                    key={item.key}
-                    href={item.href}
-                    className="rounded-full bg-white px-3 py-2 transition-colors hover:bg-stone-100 hover:text-stone-950"
-                  >
-                    {item.label}
-                  </a>
-                ))}
-          </nav>
         </header>
       </div>
 
