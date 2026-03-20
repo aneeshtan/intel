@@ -120,6 +120,20 @@ class MediaMentionIngestionService
         return $this->configuredSources($sourceKey)->isNotEmpty();
     }
 
+    public function shouldRetainStoredArticle(MediaArticle $article): bool
+    {
+        $source = $this->configuredSources($article->source_key)->first();
+
+        if (! is_array($source)) {
+            return true;
+        }
+
+        return $this->looksLikeArticleCandidate([
+            'url' => $article->url,
+            'title' => $article->title,
+        ], $source);
+    }
+
     public function fetchAndStoreArticleCandidate(
         array $source,
         array $candidate,
