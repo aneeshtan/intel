@@ -3824,7 +3824,7 @@ export function IqxIntelligenceApp() {
                     </div>
 
                     <div className="mt-5 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
-                      {workspaceTabs.map((tab) => (
+                      {activeViewWorkspaceTabs.map((tab) => (
                         <button
                           key={tab.key}
                           type="button"
