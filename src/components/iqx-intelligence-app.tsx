@@ -3097,7 +3097,7 @@ export function IqxIntelligenceApp() {
     (tab) => tab.key !== "profile" && tab.key !== "articles",
   );
   const activeViewWorkspaceTabs = workspaceTabs.filter(
-    (tab) => tab.key !== "profile" && tab.key !== "articles",
+    (tab) => tab.key !== "profile" && tab.key !== "articles" && tab.key !== "projects",
   );
   const anonymousNavItems = [
     { key: "overview", label: "Overview", href: "#overview" },
@@ -3785,10 +3785,45 @@ export function IqxIntelligenceApp() {
                           {currentTabCopy.description}
                         </p>
                       </div>
-                      <div className="flex w-full flex-nowrap gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
-                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
-                          {currentProject?.name ?? "No project selected"}
-                        </span>
+                      <div className="w-full rounded-[1.5rem] border border-stone-200 bg-white/90 px-4 py-4 sm:max-w-sm">
+                        <p className="text-xs tracking-[0.2em] text-stone-500 uppercase">
+                          Current project
+                        </p>
+                        <div className="mt-3 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-2xl font-semibold tracking-[-0.05em] text-stone-950 sm:text-[2rem]">
+                              {currentProject?.name ?? "No project selected"}
+                            </p>
+                            <p className="mt-1 text-sm text-stone-500">
+                              {currentProject
+                                ? "Use the edit control to rename, pause, or update this monitor."
+                                : "Create or choose a project to start monitoring."}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveWorkspaceTab("projects")}
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-stone-50 text-stone-600 transition-colors hover:border-stone-300 hover:text-stone-900"
+                            aria-label="Edit project"
+                            title="Edit project"
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-5 w-5"
+                              aria-hidden="true"
+                            >
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex w-full flex-nowrap gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
                         <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
                           {trackedKeywords.length} keywords
                         </span>
@@ -3838,6 +3873,27 @@ export function IqxIntelligenceApp() {
                           {tab.label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => setActiveWorkspaceTab("projects")}
+                        className="shrink-0 rounded-[1.1rem] border border-stone-200 bg-white/90 px-4 py-2.5 text-stone-700 transition hover:border-stone-400"
+                        aria-label="Edit project"
+                        title="Edit project"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-5 w-5"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
                     </div>
 
                     <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
