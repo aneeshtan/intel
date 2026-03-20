@@ -91,7 +91,11 @@ return [
                 '~^https://container-news\.com/[^/?#]+/?$~i',
             ],
             'exclude_url_patterns' => [
-                '#^https://container-news\.com/(?:top-right|cn-index|scfi|ccfi|ningbo-containerized-freight-index|mergers-and-acquisitions)(?:/|$)#i',
+                '#^https://container-news\.com/(?:top-right|featured|most-visited|sponsored|readers-speak|cn-index|cn-premium-articles|scfi|ccfi|ningbo-containerized-freight-index|mergers-and-acquisitions)(?:/|$)#i',
+            ],
+            'exclude_title_patterns' => [
+                '/\bArchives\b/i',
+                '/^CN Premium Articles\b/i',
             ],
         ],
         [

@@ -137,6 +137,21 @@ class MediaDiscoveryTest extends TestCase
             'url' => 'https://container-news.com/cn-index/',
             'title' => 'CN Index',
         ], $source));
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://container-news.com/cn-premium-articles/',
+            'title' => 'CN Premium Articles - Container News',
+        ], $source));
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://container-news.com/some-landing-page/',
+            'title' => 'Top Right Archives - Container News',
+        ], $source));
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://container-news.com/featured/',
+            'title' => 'Most Popular Archives - Container News',
+        ], $source));
     }
 
     public function test_offshore_energy_filters_region_archive_pages(): void
