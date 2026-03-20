@@ -83,6 +83,16 @@ return [
             'key' => 'container-news',
             'name' => 'Container News',
             'homepage' => 'https://container-news.com/',
+            'feed_url' => 'https://container-news.com/feed/',
+            'sitemap_paths' => [
+                '/post-sitemap.xml',
+            ],
+            'include_url_patterns' => [
+                '~^https://container-news\.com/[^/?#]+/?$~i',
+            ],
+            'exclude_url_patterns' => [
+                '#^https://container-news\.com/(?:top-right|cn-index|scfi|ccfi|ningbo-containerized-freight-index)(?:/|$)#i',
+            ],
         ],
         [
             'key' => 'logistics-middle-east',

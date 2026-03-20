@@ -112,6 +112,33 @@ class MediaDiscoveryTest extends TestCase
         });
     }
 
+    public function test_container_news_filters_archive_and_index_pages(): void
+    {
+        $service = app(MediaMentionIngestionService::class);
+        $looksLikeArticleCandidate = new \ReflectionMethod($service, 'looksLikeArticleCandidate');
+        $looksLikeArticleCandidate->setAccessible(true);
+
+        $source = collect(config('media_sources.sources'))
+            ->firstWhere('key', 'container-news');
+
+        $this->assertNotNull($source);
+
+        $this->assertTrue($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://container-news.com/port-of-virginia-completes-deep-shipping-channel/',
+            'title' => 'Port of Virginia completes deep shipping channel',
+        ], $source));
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://container-news.com/top-right/',
+            'title' => 'Top Right Archives - Container News',
+        ], $source));
+
+        $this->assertFalse($looksLikeArticleCandidate->invoke($service, [
+            'url' => 'https://container-news.com/cn-index/',
+            'title' => 'CN Index',
+        ], $source));
+    }
+
     public function test_media_discovery_discovers_sitemaps_from_the_site_root_for_path_based_sources(): void
     {
         Bus::fake();
