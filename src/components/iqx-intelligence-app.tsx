@@ -3096,6 +3096,9 @@ export function IqxIntelligenceApp() {
   const headerWorkspaceTabs = workspaceTabs.filter(
     (tab) => tab.key !== "profile" && tab.key !== "articles",
   );
+  const activeViewWorkspaceTabs = workspaceTabs.filter(
+    (tab) => tab.key !== "profile" && tab.key !== "articles",
+  );
   const anonymousNavItems = [
     { key: "overview", label: "Overview", href: "#overview" },
     { key: "access", label: "Access", href: "#access" },
@@ -3467,9 +3470,19 @@ export function IqxIntelligenceApp() {
                     </button>
                     <p className="mt-2 text-sm text-stone-500">{profile.email}</p>
                   </div>
-                  <span className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50">
-                    {profile.plan?.name ?? "No Plan"}
-                  </span>
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => setActiveWorkspaceTab("articles")}
+                      className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50 transition-colors hover:bg-stone-800"
+                    >
+                      Admin
+                    </button>
+                  ) : (
+                    <span className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50">
+                      {profile.plan?.name ?? "No Plan"}
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-5 grid gap-3 grid-cols-2">
@@ -3692,7 +3705,7 @@ export function IqxIntelligenceApp() {
                     </div>
 
                     <div className="mt-5 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
-                      {workspaceTabs.map((tab) => (
+                      {activeViewWorkspaceTabs.map((tab) => (
                         <button
                           key={tab.key}
                           type="button"
