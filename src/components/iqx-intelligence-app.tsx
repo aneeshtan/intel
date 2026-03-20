@@ -3096,9 +3096,13 @@ export function IqxIntelligenceApp() {
   const headerWorkspaceTabs = workspaceTabs.filter(
     (tab) => tab.key !== "profile" && tab.key !== "articles",
   );
-  const activeViewWorkspaceTabs = workspaceTabs.filter(
-    (tab) => tab.key !== "profile" && tab.key !== "articles" && tab.key !== "projects",
-  );
+  const activeViewWorkspaceTabs: { key: WorkspaceTab; label: string }[] = [
+    workspaceTabs.find((tab) => tab.key === "results"),
+    workspaceTabs.find((tab) => tab.key === "keywords"),
+    workspaceTabs.find((tab) => tab.key === "analysis"),
+    workspaceTabs.find((tab) => tab.key === "sources"),
+    workspaceTabs.find((tab) => tab.key === "alerts"),
+  ].filter((tab): tab is { key: WorkspaceTab; label: string } => Boolean(tab));
   const anonymousNavItems = [
     { key: "overview", label: "Overview", href: "#overview" },
     { key: "access", label: "Access", href: "#access" },
