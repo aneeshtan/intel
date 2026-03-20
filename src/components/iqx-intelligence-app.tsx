@@ -3773,7 +3773,7 @@ export function IqxIntelligenceApp() {
                   </>
                 ) : (
                   <>
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                           {currentTabCopy.eyebrow}
@@ -3781,23 +3781,15 @@ export function IqxIntelligenceApp() {
                         <h3 className="mt-2 text-[1.65rem] font-semibold tracking-[-0.04em] sm:text-[2rem]">
                           {currentTabCopy.title}
                         </h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">
-                          {currentTabCopy.description}
-                        </p>
                       </div>
-                      <div className="w-full rounded-[1.5rem] border border-stone-200 bg-white/90 px-4 py-4 sm:max-w-sm">
+                      <div className="w-full rounded-[1.35rem] border border-stone-200 bg-white/90 px-4 py-3 sm:max-w-sm">
                         <p className="text-xs tracking-[0.2em] text-stone-500 uppercase">
                           Current project
                         </p>
-                        <div className="mt-3 flex items-start justify-between gap-3">
+                        <div className="mt-2.5 flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-2xl font-semibold tracking-[-0.05em] text-stone-950 sm:text-[2rem]">
                               {currentProject?.name ?? "No project selected"}
-                            </p>
-                            <p className="mt-1 text-sm text-stone-500">
-                              {currentProject
-                                ? "Use the edit control to rename, pause, or update this monitor."
-                                : "Create or choose a project to start monitoring."}
                             </p>
                           </div>
                           <button
@@ -3830,11 +3822,6 @@ export function IqxIntelligenceApp() {
                         <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
                           {currentProject?.mentions_count ?? 0} mentions
                         </span>
-                        {isAdmin && mediaCoverage ? (
-                          <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-500">
-                            {archiveArticles} archived articles
-                          </span>
-                        ) : null}
                         {isAdmin && adminRefreshState.phase !== "idle" ? (
                           <span
                             className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAdminRefreshPhaseClass(adminRefreshState.phase)}`}
@@ -3845,20 +3832,10 @@ export function IqxIntelligenceApp() {
                               : ""}
                           </span>
                         ) : null}
-                        {isAdmin ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAdminCaptureMentions()}
-                            disabled={isPending || isAdminRefreshRunning || !selectedProjectId}
-                            className="rounded-full bg-stone-950 px-3 py-1 text-xs font-semibold text-stone-50 transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {adminRefreshButtonLabel}
-                          </button>
-                        ) : null}
                       </div>
                     </div>
 
-                    <div className="mt-5 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
+                    <div className="mt-4 flex flex-nowrap gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
                       {activeViewWorkspaceTabs.map((tab) => (
                         <button
                           key={tab.key}
