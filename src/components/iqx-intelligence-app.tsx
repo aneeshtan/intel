@@ -3461,6 +3461,16 @@ export function IqxIntelligenceApp() {
                   </span>
                 </div>
 
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveWorkspaceTab("new-project")}
+                    className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                  >
+                    New project
+                  </button>
+                </div>
+
                 <div className="mt-5 space-y-3">
                   {projects.length ? (
                     projects.map((project) => (
@@ -3491,7 +3501,7 @@ export function IqxIntelligenceApp() {
                     ))
                   ) : (
                     <div className="rounded-[1.5rem] border border-dashed border-stone-200 bg-stone-50/80 px-4 py-6 text-sm text-stone-500">
-                      No projects yet. Open the New Project tab to launch the first monitor.
+                      No projects yet. Use the button above to launch the first monitor.
                     </div>
                   )}
                 </div>
