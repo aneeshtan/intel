@@ -510,7 +510,7 @@ class MediaMentionIngestionService
 
                 foreach ($robotsCandidates->filter()->unique() as $robotsUrl) {
                     try {
-                        $robotsResponse = $this->httpClient()->get($robotsUrl);
+                        $robotsResponse = $this->fetchUrlWithFallback($robotsUrl);
 
                         if ($robotsResponse->successful()) {
                             preg_match_all('/^\s*Sitemap:\s*(\S+)/im', $robotsResponse->body(), $matches);
@@ -550,7 +550,7 @@ class MediaMentionIngestionService
         }
 
         try {
-            $response = $this->httpClient()->get($sitemapUrl);
+            $response = $this->fetchUrlWithFallback($sitemapUrl);
         } catch (\Throwable $exception) {
             Log::warning('Media sitemap fetch failed.', [
                 'source' => $source['key'],
@@ -620,7 +620,7 @@ class MediaMentionIngestionService
     private function fetchArticle(array $source, string $url, ?Carbon $fallbackPublishedAt): ?array
     {
         try {
-            $response = $this->httpClient()->get($url);
+            $response = $this->fetchUrlWithFallback($url);
         } catch (\Throwable $exception) {
             Log::warning('Media article fetch failed.', [
                 'source' => $source['key'],
@@ -915,7 +915,7 @@ class MediaMentionIngestionService
                 }
 
                 try {
-                    $response = $this->httpClient()->get($source['homepage']);
+                    $response = $this->fetchUrlWithFallback($source['homepage']);
                 } catch (\Throwable $exception) {
                     Log::warning('Media feed discovery failed.', [
                         'source' => $source['key'],
@@ -942,7 +942,7 @@ class MediaMentionIngestionService
                         $candidate = $this->joinDiscoveryUrl($baseUrl, $path);
 
                         try {
-                            $candidateResponse = $this->httpClient()->get($candidate);
+                            $candidateResponse = $this->fetchUrlWithFallback($candidate);
                         } catch (\Throwable) {
                             continue;
                         }
@@ -1035,7 +1035,7 @@ class MediaMentionIngestionService
     private function fetchFeedItems(string $feedUrl): Collection
     {
         try {
-            $response = $this->httpClient()->get($feedUrl);
+            $response = $this->fetchUrlWithFallback($feedUrl);
 
             if (! $response->successful()) {
                 return collect();
@@ -1354,6 +1354,44 @@ class MediaMentionIngestionService
     private function normalizeXmlString(string $value): string
     {
         return preg_replace('/^\xEF\xBB\xBF/', '', $value) ?? $value;
+    }
+
+    private function fetchUrlWithFallback(string $url): \Illuminate\Http\Client\Response
+    {
+        try {
+            $response = $this->httpClient()->get($url);
+            if ($response->successful()) {
+                return $response;
+            }
+            
+            if (in_array($response->status(), [403, 503])) {
+                Log::info("HTTP {$response->status()} on {$url}, failing over to Puppeteer.");
+                $html = $this->fetchWithPuppeteer($url);
+                if ($html) {
+                    return new \Illuminate\Http\Client\Response(
+                        new \GuzzleHttp\Psr7\Response(200, [], $html)
+                    );
+                }
+            }
+            
+            return $response;
+        } catch (\Throwable $exception) {
+            Log::warning("Fast fetch failed for {$url}: {$exception->getMessage()}. Failing over to Puppeteer.");
+            $html = $this->fetchWithPuppeteer($url);
+            if ($html) {
+                return new \Illuminate\Http\Client\Response(
+                    new \GuzzleHttp\Psr7\Response(200, [], $html)
+                );
+            }
+            throw $exception;
+        }
+    }
+
+    private function fetchWithPuppeteer(string $url): ?string
+    {
+        $command = 'node ' . escapeshellarg(base_path('scraper.cjs')) . ' ' . escapeshellarg($url);
+        $output = shell_exec($command);
+        return $output ?: null;
     }
 
     private function httpClient()
