@@ -30,6 +30,8 @@ class ReindexMediaArticles extends Command
         $successCount = 0;
         $failCount = 0;
 
+        \Illuminate\Support\Facades\DB::disableQueryLog();
+
         foreach ($query->lazyById(50, 'id') as $article) {
             try {
                 if ($service->refetchArticle($article)) {
@@ -44,6 +46,11 @@ class ReindexMediaArticles extends Command
             }
 
             $bar->advance();
+            
+            // Free memory explicitly 
+            unset($article);
+            gc_collect_cycles();
+
             // Sleep for 500ms to avoid hammering domains
             usleep(500000);
         }
