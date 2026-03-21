@@ -40,6 +40,26 @@ class MediaMentionIngestionService
         );
     }
 
+    public function refetchArticle(MediaArticle $article): bool
+    {
+        $source = $this->configuredSources($article->source_key)->first();
+        if (! $source) return false;
+
+        $fetched = $this->fetchArticle($source, $article->url, $article->published_at);
+        if (! $fetched) return false;
+
+        $article->update([
+            'title' => $fetched['title'],
+            'body' => $fetched['body'],
+            'author_name' => $fetched['author'] ?? $article->author_name,
+            'published_at' => $fetched['published_at'] ?: $article->published_at,
+        ]);
+
+        $this->syncMentionsForArticle($article);
+
+        return true;
+    }
+
     public function backfillRecentArticles(
         ?int $lookbackDays = null,
         bool $force = false,
@@ -208,6 +228,12 @@ class MediaMentionIngestionService
 
                     if ($mention->wasRecentlyCreated) {
                         $inserted++;
+                    } else {
+                        $mention->update([
+                            'title' => $article->title,
+                            'body' => $article->body,
+                            'author_name' => $article->author_name ?: $article->source_name,
+                        ]);
                     }
 
                     $this->markProjectKeywordSynced($project, $keyword);
@@ -299,6 +325,12 @@ class MediaMentionIngestionService
 
                         if ($mention->wasRecentlyCreated) {
                             $inserted++;
+                        } else {
+                            $mention->update([
+                                'title' => $article->title,
+                                'body' => $article->body,
+                                'author_name' => $article->author_name ?: $article->source_name,
+                            ]);
                         }
                     }
                 });
@@ -529,11 +561,17 @@ class MediaMentionIngestionService
             return collect();
         }
 
-        if (! $response->successful() || ! str_contains($response->body(), '<')) {
+        $body = $response->body();
+
+        if (str_starts_with($body, "\x1f\x8b")) {
+            $body = @gzdecode($body) ?: $body;
+        }
+
+        if (! $response->successful() || ! str_contains($body, '<')) {
             return collect();
         }
 
-        $xml = $this->loadXml($response->body());
+        $xml = $this->loadXml($body);
 
         if (! $xml) {
             return collect();
@@ -545,7 +583,10 @@ class MediaMentionIngestionService
             return collect($sitemapNodes)
                 ->flatMap(function (\SimpleXMLElement $node) use ($source, $since, $depth): Collection {
                     $childUrl = $this->xmlChildValue($node, 'loc');
-                    $lastmod = $this->parseDate($this->xmlChildValue($node, 'lastmod'));
+                    
+                    $lastmodNode = $node->xpath('.//*[local-name()="lastmod"]') ?: $node->xpath('.//*[local-name()="publication_date"]') ?: [];
+                    $lastmodStr = $lastmodNode !== [] ? trim((string) $lastmodNode[0]) : '';
+                    $lastmod = $this->parseDate($lastmodStr);
 
                     if (! $childUrl || ($lastmod && $lastmod->lt($since) && ! str_contains($childUrl, 'news'))) {
                         return collect();
@@ -565,9 +606,12 @@ class MediaMentionIngestionService
                     return null;
                 }
 
+                $lastmodNode = $node->xpath('.//*[local-name()="lastmod"]') ?: $node->xpath('.//*[local-name()="publication_date"]') ?: [];
+                $lastmodStr = $lastmodNode !== [] ? trim((string) $lastmodNode[0]) : '';
+
                 return [
                     'url' => trim($url),
-                    'published_at' => $this->parseDate($this->xmlChildValue($node, 'lastmod')),
+                    'published_at' => $this->parseDate($lastmodStr),
                 ];
             })
             ->filter();
@@ -700,23 +744,47 @@ class MediaMentionIngestionService
 
         $xpath = new \DOMXPath($dom);
 
+        $jsonLdHeadline = '';
+        $jsonLdAuthor = '';
+        $jsonLdDate = null;
+
+        $scriptNodes = $xpath->query('//script[@type="application/ld+json"]');
+        if ($scriptNodes) {
+            foreach ($scriptNodes as $node) {
+                $json = json_decode($node->textContent, true);
+                if (! is_array($json)) continue;
+                
+                $objects = isset($json['@type']) ? [$json] : (isset($json['@graph']) ? $json['@graph'] : (is_int(key($json)) ? $json : [$json]));
+                foreach ($objects as $obj) {
+                    if (is_array($obj) && isset($obj['@type']) && in_array($obj['@type'], ['NewsArticle', 'Article', 'BlogPosting', 'Report', 'WebPage'])) {
+                        if (empty($jsonLdHeadline) && ! empty($obj['headline'])) $jsonLdHeadline = is_array($obj['headline']) ? $obj['headline'][0] : $obj['headline'];
+                        if (empty($jsonLdDate) && ! empty($obj['datePublished'])) $jsonLdDate = $this->parseDate($obj['datePublished']);
+                        if (empty($jsonLdAuthor)) {
+                            if (! empty($obj['author']['name'])) $jsonLdAuthor = is_array($obj['author']['name']) ? $obj['author']['name'][0] : $obj['author']['name'];
+                            elseif (! empty($obj['author'][0]['name'])) $jsonLdAuthor = $obj['author'][0]['name'];
+                        }
+                    }
+                }
+            }
+        }
+
         foreach ($xpath->query('//script|//style|//noscript|//svg|//nav|//footer|//header|//form|//aside') ?: [] as $node) {
             $node->parentNode?->removeChild($node);
         }
 
-        $title = $this->firstXPathValue($xpath, [
+        $title = $this->cleanText((string) $jsonLdHeadline) ?: $this->firstXPathValue($xpath, [
             '//meta[@property="og:title"]/@content',
             '//meta[@name="twitter:title"]/@content',
             '//title',
             '//h1[1]',
         ]);
 
-        $author = $this->firstXPathValue($xpath, [
+        $author = $this->cleanText((string) $jsonLdAuthor) ?: $this->firstXPathValue($xpath, [
             '//meta[@name="author"]/@content',
             '//*[contains(@class, "author")][1]',
         ]);
 
-        $publishedAt = $this->parseDate($this->firstXPathValue($xpath, [
+        $publishedAt = $jsonLdDate ?: $this->parseDate($this->firstXPathValue($xpath, [
             '//meta[@property="article:published_time"]/@content',
             '//meta[@name="pubdate"]/@content',
             '//time[1]/@datetime',
@@ -726,15 +794,28 @@ class MediaMentionIngestionService
             $publishedAt = $this->parseDate($matches[1]);
         }
 
-        $bodyNode = $xpath->query('//article[1]')->item(0)
-            ?: $xpath->query('//main[1]')->item(0)
-            ?: $xpath->query('//body[1]')->item(0);
-
-        if (! $bodyNode) {
-            return null;
+        $body = '';
+        
+        try {
+            if (class_exists(\fivefilters\Readability\Readability::class)) {
+                $readability = new \fivefilters\Readability\Readability(new \fivefilters\Readability\Configuration());
+                $readability->parse($html);
+                $body = $this->cleanText($readability->getContent() ?: '');
+            }
+        } catch (\Throwable $e) {
+            // Readability parsing failed, continue to fallback
         }
 
-        $body = $this->cleanText($dom->saveHTML($bodyNode) ?: '');
+        if (mb_strlen($body) < 120) {
+            $bodyNode = $xpath->query('//article[1]')->item(0)
+                ?: $xpath->query('//div[contains(@class, "article-content") or contains(@class, "post-content") or contains(@itemprop, "articleBody")][1]')->item(0)
+                ?: $xpath->query('//main[1]')->item(0)
+                ?: $xpath->query('//body[1]')->item(0);
+
+            if ($bodyNode) {
+                $body = $this->cleanText($dom->saveHTML($bodyNode) ?: '');
+            }
+        }
 
         if ($title === '' || mb_strlen($body) < 120) {
             return null;
@@ -1277,9 +1358,27 @@ class MediaMentionIngestionService
 
     private function httpClient()
     {
-        return Http::timeout((int) config('media_sources.timeout_seconds', 12))
-            ->connectTimeout((int) config('media_sources.connect_timeout_seconds', 3))
-            ->withUserAgent((string) config('media_sources.user_agent'));
+        $userAgents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15',
+        ];
+
+        return Http::timeout((int) config('media_sources.timeout_seconds', 15))
+            ->connectTimeout((int) config('media_sources.connect_timeout_seconds', 5))
+            ->withUserAgent(config('media_sources.user_agent') ?: $userAgents[array_rand($userAgents)])
+            ->retry(3, 1000, function (\Throwable $exception) {
+                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                    return true;
+                }
+                if ($exception instanceof \Illuminate\Http\Client\RequestException && $exception->response) {
+                    $status = $exception->response->status();
+                    return $status >= 500 || $status === 429 || $status === 408;
+                }
+                return false;
+            });
     }
 
     private function isMutedForProject(Project $project, ?string $url, ?string $author): bool
