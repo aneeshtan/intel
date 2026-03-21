@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { motion } from "framer-motion";
 
 const TOKEN_KEY = "iqx-intelligence-token";
 const inputClassName =
-  "mt-2 w-full rounded-2xl border border-stone-200 bg-white/90 px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-400";
+  "mt-2 w-full rounded-2xl border border-stone-200 bg-white/40 backdrop-blur-xl px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-400";
 
 function getAdminSourceStatusClass(status: string) {
   return status === "working"
@@ -13,11 +14,11 @@ function getAdminSourceStatusClass(status: string) {
       ? "bg-amber-100 text-amber-700"
       : status === "unindexed"
         ? "bg-sky-100 text-sky-700"
-      : status === "broken"
-        ? "bg-rose-100 text-rose-700"
-        : status === "premium-risk"
-          ? "bg-violet-100 text-violet-700"
-          : "bg-stone-200 text-stone-700";
+        : status === "broken"
+          ? "bg-rose-100 text-rose-700"
+          : status === "premium-risk"
+            ? "bg-violet-100 text-violet-700"
+            : "bg-stone-200 text-stone-700";
 }
 
 function getAdminRefreshPhaseClass(phase: AdminRefreshPhase) {
@@ -865,10 +866,10 @@ async function apiRequest<T>(
 
     throw new Error(
       validationMessage ??
-        (payload.message as string | undefined) ??
-        proxyFailureMessage ??
-        plainTextMessage ??
-        "The request could not be completed.",
+      (payload.message as string | undefined) ??
+      proxyFailureMessage ??
+      plainTextMessage ??
+      "The request could not be completed.",
     );
   }
 
@@ -885,7 +886,11 @@ function StatCard({
   detail: string;
 }) {
   return (
-    <article className="rounded-[2rem] border border-white/60 bg-white/75 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
+    <motion.article
+      whileHover={{ y: -4, scale: 1.01 }}
+      transition={{ duration: 0.2 }}
+      className="rounded-[2rem] border border-white/20 bg-white/40 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl"
+    >
       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">{label}</p>
       <div className="mt-4 flex items-end justify-between gap-4">
         <strong className="text-4xl font-semibold tracking-[-0.04em] text-stone-950">
@@ -895,7 +900,7 @@ function StatCard({
           {detail}
         </span>
       </div>
-    </article>
+    </motion.article>
   );
 }
 
@@ -952,7 +957,7 @@ function DonutBreakdownCard({
         <div className="flex-1 space-y-3">
           {items.length ? (
             items.map((item) => (
-              <div key={item.label} className="rounded-[1.1rem] border border-white/70 bg-white/90 p-3">
+              <div key={item.label} className="rounded-[1.1rem] border border-white/20 bg-white/40 backdrop-blur-xl p-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <span
@@ -1478,10 +1483,10 @@ export function IqxIntelligenceApp() {
       current.map((project) =>
         project.id === response.data.id
           ? {
-              ...project,
-              tracked_keywords_count: response.data.tracked_keywords_count,
-              mentions_count: response.data.mentions_count,
-            }
+            ...project,
+            tracked_keywords_count: response.data.tracked_keywords_count,
+            mentions_count: response.data.mentions_count,
+          }
           : project,
       ),
     );
@@ -1561,12 +1566,12 @@ export function IqxIntelligenceApp() {
     setAdminWorkspaceData((current) =>
       current
         ? {
-            ...current,
-            automation: {
-              ...current.automation,
-              auto_indexing_paused: response.data.auto_indexing_paused,
-            },
-          }
+          ...current,
+          automation: {
+            ...current.automation,
+            auto_indexing_paused: response.data.auto_indexing_paused,
+          },
+        }
         : current,
     );
 
@@ -1754,17 +1759,17 @@ export function IqxIntelligenceApp() {
         const payload =
           authMode === "register"
             ? {
-                name: authForm.name,
-                email: authForm.email,
-                password: authForm.password,
-                password_confirmation: authForm.passwordConfirmation,
-                device_name: "iqx-web",
-              }
+              name: authForm.name,
+              email: authForm.email,
+              password: authForm.password,
+              password_confirmation: authForm.passwordConfirmation,
+              device_name: "iqx-web",
+            }
             : {
-                email: authForm.email,
-                password: authForm.password,
-                device_name: "iqx-web",
-              };
+              email: authForm.email,
+              password: authForm.password,
+              device_name: "iqx-web",
+            };
 
         const response = await apiRequest<AuthResponse>(endpoint, {
           method: "POST",
@@ -1824,9 +1829,9 @@ export function IqxIntelligenceApp() {
               email: profileForm.email.trim(),
               ...(profileForm.password.trim()
                 ? {
-                    password: profileForm.password,
-                    password_confirmation: profileForm.passwordConfirmation,
-                  }
+                  password: profileForm.password,
+                  password_confirmation: profileForm.passwordConfirmation,
+                }
                 : {}),
             }),
           },
@@ -2142,18 +2147,18 @@ export function IqxIntelligenceApp() {
         setSelectedProject((current) =>
           current && current.id === selectedProjectId
             ? {
-                ...current,
-                mentions: current.mentions.map((mention) =>
-                  mention.id === mentionId ? response.data : mention,
-                ),
-              }
+              ...current,
+              mentions: current.mentions.map((mention) =>
+                mention.id === mentionId ? response.data : mention,
+              ),
+            }
             : current,
         );
         setFlashMessage(
           response.message ??
-            (sentiment === "auto"
-              ? "Sentiment reset to the system value."
-              : "Sentiment updated."),
+          (sentiment === "auto"
+            ? "Sentiment reset to the system value."
+            : "Sentiment updated."),
         );
         setBootError(null);
       } catch (error) {
@@ -2582,12 +2587,12 @@ export function IqxIntelligenceApp() {
         setProfile((current) =>
           current
             ? {
-                ...current,
-                counts: {
-                  ...current.counts,
-                  unread_alerts: Math.max(0, current.counts.unread_alerts - 1),
-                },
-              }
+              ...current,
+              counts: {
+                ...current.counts,
+                unread_alerts: Math.max(0, current.counts.unread_alerts - 1),
+              },
+            }
             : current,
         );
         setBootError(null);
@@ -2896,12 +2901,12 @@ export function IqxIntelligenceApp() {
           </p>
           <p style="margin-top: 12px; font-size: 16px; color: #57534e;">
             Generated on ${new Intl.DateTimeFormat("en-US", {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            }).format(new Date())}
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date())}
           </p>
           <div class="grid">
             <div class="card"><div class="muted">Mentions</div><div style="font-size:34px;font-weight:700;margin-top:8px;">${reportMentions.length}</div></div>
@@ -2926,9 +2931,8 @@ export function IqxIntelligenceApp() {
   const sourceGroups = selectedProject?.source_groups ?? [];
   const influencerGroups = selectedProject?.influencer_groups ?? [];
   const filteredMentions = mentions.filter((mention) => {
-    const haystack = `${mention.title ?? ""} ${mention.body} ${mention.author_name ?? ""} ${
-      mention.metadata?.source_name ?? mention.source
-    } ${mention.tracked_keyword?.keyword ?? ""}`.toLowerCase();
+    const haystack = `${mention.title ?? ""} ${mention.body} ${mention.author_name ?? ""} ${mention.metadata?.source_name ?? mention.source
+      } ${mention.tracked_keyword?.keyword ?? ""}`.toLowerCase();
 
     return haystack.includes(mentionsQuery.trim().toLowerCase());
   });
@@ -2976,9 +2980,8 @@ export function IqxIntelligenceApp() {
       return true;
     }
 
-    return `${project.name} ${project.slug} ${project.status} ${project.user.name ?? ""} ${
-      project.user.email ?? ""
-    } ${project.description ?? ""}`
+    return `${project.name} ${project.slug} ${project.status} ${project.user.name ?? ""} ${project.user.email ?? ""
+      } ${project.description ?? ""}`
       .toLowerCase()
       .includes(normalizedAdminInventoryQuery);
   });
@@ -2987,9 +2990,8 @@ export function IqxIntelligenceApp() {
       return true;
     }
 
-    return `${account.name} ${account.email} ${account.roles.join(" ")} ${
-      account.plan_name ?? ""
-    }`
+    return `${account.name} ${account.email} ${account.roles.join(" ")} ${account.plan_name ?? ""
+      }`
       .toLowerCase()
       .includes(normalizedAdminInventoryQuery);
   });
@@ -2998,9 +3000,8 @@ export function IqxIntelligenceApp() {
       return true;
     }
 
-    return `${keyword.keyword} ${keyword.platform} ${keyword.match_type} ${
-      keyword.project.name ?? ""
-    } ${keyword.user.name ?? ""} ${keyword.user.email ?? ""}`
+    return `${keyword.keyword} ${keyword.platform} ${keyword.match_type} ${keyword.project.name ?? ""
+      } ${keyword.user.name ?? ""} ${keyword.user.email ?? ""}`
       .toLowerCase()
       .includes(normalizedAdminInventoryQuery);
   });
@@ -3012,12 +3013,12 @@ export function IqxIntelligenceApp() {
     adminRefreshState.phase === "idle"
       ? 0
       : Math.max(
-          8,
-          Math.min(
-            100,
-            Math.round((adminRefreshState.poll_attempt / adminRefreshState.max_polls) * 100),
-          ),
-        );
+        8,
+        Math.min(
+          100,
+          Math.round((adminRefreshState.poll_attempt / adminRefreshState.max_polls) * 100),
+        ),
+      );
   const isAdminRefreshRunning =
     adminRefreshState.phase === "starting" || adminRefreshState.phase === "polling";
   const adminRefreshScopeLabel = adminRefreshState.source_name
@@ -3179,7 +3180,7 @@ export function IqxIntelligenceApp() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[36rem] bg-[radial-gradient(circle_at_top,_rgba(196,181,253,0.22),_transparent_38%),radial-gradient(circle_at_25%_30%,_rgba(125,211,252,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(251,191,36,0.16),_transparent_24%)]" />
 
       <div className="sticky top-0 z-30 w-full px-3 pt-3 sm:px-6 sm:pt-4 lg:px-8">
-        <header className="w-full rounded-[1.5rem] border border-white/60 bg-white/86 px-4 py-3 shadow-[0_12px_36px_rgba(15,23,42,0.05)] backdrop-blur sm:px-5">
+        <header className="w-full rounded-[1.5rem] border border-white/20 bg-white/40 px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl sm:px-5">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <h1 className="text-base font-semibold tracking-[-0.03em] text-stone-950 sm:text-lg">
               IQX Intelligence
@@ -3188,28 +3189,27 @@ export function IqxIntelligenceApp() {
             <nav className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto text-sm text-stone-600 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-3">
               {profile
                 ? headerWorkspaceTabs.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setActiveWorkspaceTab(item.key)}
-                      className={`shrink-0 rounded-full px-3 py-2 transition-colors ${
-                        activeWorkspaceTab === item.key
-                          ? "bg-stone-950 text-stone-50"
-                          : "text-stone-600 hover:bg-stone-100 hover:text-stone-950"
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setActiveWorkspaceTab(item.key)}
+                    className={`shrink-0 rounded-full px-3 py-2 transition-colors ${activeWorkspaceTab === item.key
+                      ? "bg-stone-950 text-stone-50"
+                      : "text-stone-600 hover:bg-stone-100 hover:text-stone-950"
                       }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))
+                  >
+                    {item.label}
+                  </button>
+                ))
                 : anonymousNavItems.map((item) => (
-                    <a
-                      key={item.key}
-                      href={item.href}
-                      className="shrink-0 rounded-full px-3 py-2 transition-colors hover:bg-stone-100 hover:text-stone-950"
-                    >
-                      {item.label}
-                    </a>
-                  ))}
+                  <a
+                    key={item.key}
+                    href={item.href}
+                    className="shrink-0 rounded-full px-3 py-2 transition-colors hover:bg-stone-100 hover:text-stone-950"
+                  >
+                    {item.label}
+                  </a>
+                ))}
             </nav>
           </div>
         </header>
@@ -3249,26 +3249,24 @@ export function IqxIntelligenceApp() {
 
             <aside
               id="access"
-              className="scroll-mt-28 rounded-[2rem] border border-white/60 bg-white/78 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[2.25rem] sm:p-6"
+              className="scroll-mt-28 rounded-[2rem] border border-white/20 bg-white/40 p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl sm:rounded-[2.25rem] sm:p-6"
             >
               <div className="flex gap-2 rounded-full border border-stone-200 bg-stone-50 p-1">
                 <button
                   type="button"
                   onClick={() => setAuthMode("register")}
-                  className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                    authMode === "register"
-                      ? "bg-stone-950 text-stone-50"
-                      : "text-stone-600"
-                  }`}
+                  className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${authMode === "register"
+                    ? "bg-stone-950 text-stone-50"
+                    : "text-stone-600"
+                    }`}
                 >
                   Register
                 </button>
                 <button
                   type="button"
                   onClick={() => setAuthMode("login")}
-                  className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                    authMode === "login" ? "bg-stone-950 text-stone-50" : "text-stone-600"
-                  }`}
+                  className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${authMode === "login" ? "bg-stone-950 text-stone-50" : "text-stone-600"
+                    }`}
                 >
                   Login
                 </button>
@@ -3390,13 +3388,13 @@ export function IqxIntelligenceApp() {
         ) : null}
 
         {isBooting ? (
-          <div className="rounded-[2.4rem] border border-white/60 bg-white/75 p-8 text-sm text-stone-500 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+          <div className="rounded-[2.4rem] border border-white/20 bg-white/40 backdrop-blur-xl p-8 text-sm text-stone-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
             Loading your monitoring workspace...
           </div>
         ) : profile ? (
           <div className="grid items-start gap-4 xl:grid-cols-[21rem_minmax(0,1fr)] xl:gap-5">
             <section className="grid gap-5 xl:sticky xl:top-28">
-              <article className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
+              <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -3486,7 +3484,7 @@ export function IqxIntelligenceApp() {
                 </div>
               </article>
 
-              <article className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
+              <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -3518,11 +3516,10 @@ export function IqxIntelligenceApp() {
                         key={project.id}
                         type="button"
                         onClick={() => handleProjectSelect(project.id)}
-                        className={`w-full rounded-[1.35rem] border p-4 text-left transition ${
-                          selectedProjectId === project.id
-                            ? "border-stone-900 bg-stone-950 text-stone-50"
-                            : "border-stone-200 bg-stone-50/90 text-stone-900"
-                        }`}
+                        className={`w-full rounded-[1.35rem] border p-4 text-left transition ${selectedProjectId === project.id
+                          ? "border-stone-900 bg-stone-950 text-stone-50"
+                          : "border-stone-200 bg-stone-50/90 text-stone-900"
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-4">
                           <strong className="text-base font-semibold">{project.name}</strong>
@@ -3550,7 +3547,7 @@ export function IqxIntelligenceApp() {
             </section>
 
             <section className="grid gap-5">
-              <article className="rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,243,239,0.92))] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
+              <article className="rounded-[2rem] border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,243,239,0.92))] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-5">
                 {activeWorkspaceTab === "articles" ? (
                   <>
                     <div>
@@ -3566,7 +3563,7 @@ export function IqxIntelligenceApp() {
                     </div>
 
                     <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-5">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Indexed</p>
                         <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
                           {indexedSources}
@@ -3576,7 +3573,7 @@ export function IqxIntelligenceApp() {
                         </p>
                       </article>
 
-                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-5">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Broken</p>
                         <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
                           {mediaCoverage?.summary.broken_sources ?? 0}
@@ -3586,7 +3583,7 @@ export function IqxIntelligenceApp() {
                         </p>
                       </article>
 
-                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-5">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Unindexed
                         </p>
@@ -3598,7 +3595,7 @@ export function IqxIntelligenceApp() {
                         </p>
                       </article>
 
-                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                      <article className="rounded-[1.35rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-5">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Archive articles</p>
                         <strong className="mt-3 block text-4xl font-semibold tracking-[-0.04em] text-stone-950">
                           {allCapturedArticleMeta.total}
@@ -3609,7 +3606,7 @@ export function IqxIntelligenceApp() {
                       </article>
                     </div>
 
-                    <article className="mt-4 rounded-[1.35rem] border border-stone-200 bg-white/88 p-5">
+                    <article className="mt-4 rounded-[1.35rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-5">
                       <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">Latest article</p>
                       <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em] text-stone-950">
                         {latestCapturedArticle?.title ?? "No archived article yet"}
@@ -3667,11 +3664,10 @@ export function IqxIntelligenceApp() {
                           key={tab.key}
                           type="button"
                           onClick={() => setActiveWorkspaceTab(tab.key)}
-                          className={`shrink-0 rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
-                            activeWorkspaceTab === tab.key
-                              ? "bg-stone-950 text-stone-50"
-                              : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
-                          }`}
+                          className={`shrink-0 rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${activeWorkspaceTab === tab.key
+                            ? "bg-stone-950 text-stone-50"
+                            : "border border-stone-200 bg-white/40 backdrop-blur-xl text-stone-700 hover:border-stone-400"
+                            }`}
                         >
                           {tab.label}
                         </button>
@@ -3679,7 +3675,7 @@ export function IqxIntelligenceApp() {
                     </div>
 
                     <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-4">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Current plan
                         </p>
@@ -3691,7 +3687,7 @@ export function IqxIntelligenceApp() {
                         </p>
                       </article>
 
-                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-4">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Projects used
                         </p>
@@ -3703,7 +3699,7 @@ export function IqxIntelligenceApp() {
                         </p>
                       </article>
 
-                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-4">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Keywords used
                         </p>
@@ -3715,7 +3711,7 @@ export function IqxIntelligenceApp() {
                         </p>
                       </article>
 
-                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4">
+                      <article className="rounded-[1.2rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-4">
                         <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                           Retention
                         </p>
@@ -3739,7 +3735,7 @@ export function IqxIntelligenceApp() {
                           {currentTabCopy.title}
                         </h3>
                       </div>
-                      <div className="w-full rounded-[1.35rem] border border-stone-200 bg-white/90 px-4 py-3 sm:max-w-sm">
+                      <div className="w-full rounded-[1.35rem] border border-stone-200 bg-white/40 backdrop-blur-xl px-4 py-3 sm:max-w-sm">
                         <p className="text-xs tracking-[0.2em] text-stone-500 uppercase">
                           Current project
                         </p>
@@ -3798,11 +3794,10 @@ export function IqxIntelligenceApp() {
                           key={tab.key}
                           type="button"
                           onClick={() => setActiveWorkspaceTab(tab.key)}
-                          className={`shrink-0 rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${
-                            activeWorkspaceTab === tab.key
-                              ? "bg-stone-950 text-stone-50"
-                              : "border border-stone-200 bg-white/90 text-stone-700 hover:border-stone-400"
-                          }`}
+                          className={`shrink-0 rounded-[1.1rem] px-4 py-2.5 text-sm font-semibold transition ${activeWorkspaceTab === tab.key
+                            ? "bg-stone-950 text-stone-50"
+                            : "border border-stone-200 bg-white/40 backdrop-blur-xl text-stone-700 hover:border-stone-400"
+                            }`}
                         >
                           {tab.label}
                         </button>
@@ -3810,7 +3805,7 @@ export function IqxIntelligenceApp() {
                       <button
                         type="button"
                         onClick={() => setActiveWorkspaceTab("projects")}
-                        className="shrink-0 rounded-[1.1rem] border border-stone-200 bg-white/90 px-4 py-2.5 text-stone-700 transition hover:border-stone-400"
+                        className="shrink-0 rounded-[1.1rem] border border-stone-200 bg-white/40 backdrop-blur-xl px-4 py-2.5 text-stone-700 transition hover:border-stone-400"
                         aria-label="Edit project"
                         title="Edit project"
                       >
@@ -3834,7 +3829,7 @@ export function IqxIntelligenceApp() {
                       {overviewCards.map((card) => (
                         <article
                           key={card.label}
-                          className="rounded-[1.2rem] border border-stone-200 bg-white/88 p-4"
+                          className="rounded-[1.2rem] border border-stone-200 bg-white/40 backdrop-blur-xl p-4"
                         >
                           <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                             {card.label}
@@ -3854,7 +3849,7 @@ export function IqxIntelligenceApp() {
                 <div className="grid gap-5">
                   <article
                     id="results"
-                    className="rounded-[2rem] border border-white/60 bg-white/86 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5"
+                    className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-5"
                   >
                     <MentionReachChart mentions={filteredMentions} />
 
@@ -4017,11 +4012,10 @@ export function IqxIntelligenceApp() {
                                 key={page}
                                 type="button"
                                 onClick={() => setMentionsPage(page)}
-                                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                                  page === safeMentionsPage
-                                    ? "bg-stone-950 text-stone-50"
-                                    : "border border-stone-300 text-stone-700 hover:border-stone-500"
-                                }`}
+                                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${page === safeMentionsPage
+                                  ? "bg-stone-950 text-stone-50"
+                                  : "border border-stone-300 text-stone-700 hover:border-stone-500"
+                                  }`}
                               >
                                 {page}
                               </button>
@@ -4045,7 +4039,7 @@ export function IqxIntelligenceApp() {
               ) : null}
 
               {activeWorkspaceTab === "alerts" ? (
-                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                     <section className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -4615,11 +4609,10 @@ export function IqxIntelligenceApp() {
                             alertInbox.map((item) => (
                               <article
                                 key={item.id}
-                                className={`rounded-[1.2rem] border p-4 ${
-                                  item.read_at
-                                    ? "border-stone-200 bg-white"
-                                    : "border-blue-200 bg-blue-50/70"
-                                }`}
+                                className={`rounded-[1.2rem] border p-4 ${item.read_at
+                                  ? "border-stone-200 bg-white"
+                                  : "border-blue-200 bg-blue-50/70"
+                                  }`}
                               >
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
@@ -4699,7 +4692,7 @@ export function IqxIntelligenceApp() {
               ) : null}
 
               {activeWorkspaceTab === "analysis" ? (
-                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="flex flex-col gap-4 border-b border-stone-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -4721,11 +4714,10 @@ export function IqxIntelligenceApp() {
                             key={option.value}
                             type="button"
                             onClick={() => setAnalysisWindowDays(option.value)}
-                            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                              analysisWindowDays === option.value
-                                ? "bg-stone-950 text-stone-50"
-                                : "text-stone-600 hover:bg-white hover:text-stone-950"
-                            }`}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${analysisWindowDays === option.value
+                              ? "bg-stone-950 text-stone-50"
+                              : "text-stone-600 hover:bg-white hover:text-stone-950"
+                              }`}
                           >
                             {option.label}
                           </button>
@@ -4761,7 +4753,7 @@ export function IqxIntelligenceApp() {
                         {analysisOverviewCards.map((card) => (
                           <article
                             key={card.label}
-                            className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                            className="rounded-[1.2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4"
                           >
                             <p className="text-xs tracking-[0.18em] text-stone-500 uppercase">
                               {card.label}
@@ -4796,7 +4788,7 @@ export function IqxIntelligenceApp() {
                           popularAnalysisMentions.map((mention) => (
                             <article
                               key={mention.id}
-                              className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                              className="rounded-[1.2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -4846,7 +4838,7 @@ export function IqxIntelligenceApp() {
                           topPublicProfiles.map((profileItem) => (
                             <article
                               key={profileItem.author}
-                              className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                              className="rounded-[1.2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -4968,7 +4960,7 @@ export function IqxIntelligenceApp() {
                       <div className="mt-4 space-y-3">
                         {shareOfVoice.length ? (
                           shareOfVoice.map((item) => (
-                            <div key={item.id} className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4">
+                            <div key={item.id} className="rounded-[1.2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4">
                               <div className="flex items-center justify-between gap-4">
                                 <strong className="text-sm font-semibold text-stone-900">{item.label}</strong>
                                 <span className="text-sm text-stone-500">{item.share}%</span>
@@ -5003,7 +4995,7 @@ export function IqxIntelligenceApp() {
                           topFollowers.map((item) => (
                             <article
                               key={item.author}
-                              className="rounded-[1.2rem] border border-white/70 bg-white/90 p-4"
+                              className="rounded-[1.2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -5038,7 +5030,7 @@ export function IqxIntelligenceApp() {
               ) : null}
 
               {activeWorkspaceTab === "sources" ? (
-                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -5101,11 +5093,10 @@ export function IqxIntelligenceApp() {
                                         : handleMuteSource(item.domain)
                                     }
                                     disabled={isPending}
-                                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                                      item.muted
-                                        ? "border border-stone-300 text-stone-700 hover:border-stone-500"
-                                        : "border border-rose-200 text-rose-600 hover:border-rose-400"
-                                    }`}
+                                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${item.muted
+                                      ? "border border-stone-300 text-stone-700 hover:border-stone-500"
+                                      : "border border-rose-200 text-rose-600 hover:border-rose-400"
+                                      }`}
                                   >
                                     {item.muted ? "Unmute" : "Ban source"}
                                   </button>
@@ -5164,11 +5155,10 @@ export function IqxIntelligenceApp() {
                                         : handleMuteInfluencer(item.author)
                                     }
                                     disabled={isPending}
-                                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                                      item.muted
-                                        ? "border border-stone-300 text-stone-700 hover:border-stone-500"
-                                        : "border border-rose-200 text-rose-600 hover:border-rose-400"
-                                    }`}
+                                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${item.muted
+                                      ? "border border-stone-300 text-stone-700 hover:border-stone-500"
+                                      : "border border-rose-200 text-rose-600 hover:border-rose-400"
+                                      }`}
                                   >
                                     {item.muted ? "Unmute" : "Ban author"}
                                   </button>
@@ -5203,11 +5193,10 @@ export function IqxIntelligenceApp() {
                                   {channel.label}
                                 </strong>
                                 <span
-                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                    channel.status === "Live"
-                                      ? "bg-emerald-100 text-emerald-700"
-                                      : "bg-amber-100 text-amber-700"
-                                  }`}
+                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${channel.status === "Live"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-amber-100 text-amber-700"
+                                    }`}
                                 >
                                   {channel.status}
                                 </span>
@@ -5310,7 +5299,7 @@ export function IqxIntelligenceApp() {
               ) : null}
 
               {activeWorkspaceTab === "articles" ? (
-                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -5357,11 +5346,10 @@ export function IqxIntelligenceApp() {
                           {getAdminRefreshPhaseLabel(adminRefreshState.phase)}
                         </span>
                         <span
-                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                            autoIndexingPaused
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          }`}
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${autoIndexingPaused
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            }`}
                         >
                           Auto indexing: {autoIndexingPaused ? "Paused" : "Live"}
                         </span>
@@ -5386,15 +5374,14 @@ export function IqxIntelligenceApp() {
 
                     <div className="mt-5 h-2 overflow-hidden rounded-full bg-stone-200">
                       <div
-                        className={`h-full rounded-full transition-all ${
-                          adminRefreshState.phase === "error"
-                            ? "bg-rose-500"
-                            : adminRefreshState.phase === "active"
-                              ? "bg-emerald-500"
-                              : adminRefreshState.phase === "stalled"
-                                ? "bg-amber-500"
-                                : "bg-sky-500"
-                        }`}
+                        className={`h-full rounded-full transition-all ${adminRefreshState.phase === "error"
+                          ? "bg-rose-500"
+                          : adminRefreshState.phase === "active"
+                            ? "bg-emerald-500"
+                            : adminRefreshState.phase === "stalled"
+                              ? "bg-amber-500"
+                              : "bg-sky-500"
+                          }`}
                         style={{ width: `${adminRefreshProgressPercent}%` }}
                       />
                     </div>
@@ -5457,8 +5444,8 @@ export function IqxIntelligenceApp() {
                         <p className="mt-2 text-xs text-stone-500">
                           {formatPublishedAt(
                             adminRefreshState.latest_article_published_at ??
-                              latestCapturedArticle?.published_at ??
-                              null,
+                            latestCapturedArticle?.published_at ??
+                            null,
                           )}
                         </p>
                       </article>
@@ -5480,11 +5467,10 @@ export function IqxIntelligenceApp() {
                         key={tab.key}
                         type="button"
                         onClick={() => setActiveAdminCenterTab(tab.key)}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                          activeAdminCenterTab === tab.key
-                            ? "bg-stone-950 text-stone-50"
-                            : "border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-900"
-                        }`}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${activeAdminCenterTab === tab.key
+                          ? "bg-stone-950 text-stone-50"
+                          : "border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-900"
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -5510,12 +5496,12 @@ export function IqxIntelligenceApp() {
                             onChange={(event) =>
                               setAdminSourceStatusFilter(
                                 event.target.value as
-                                  | "all"
-                                  | "working"
-                                  | "flaky"
-                                  | "broken"
-                                  | "premium-risk"
-                                  | "unindexed",
+                                | "all"
+                                | "working"
+                                | "flaky"
+                                | "broken"
+                                | "premium-risk"
+                                | "unindexed",
                               )
                             }
                             className={inputClassName}
@@ -5884,11 +5870,10 @@ export function IqxIntelligenceApp() {
                                       {keyword.match_type}
                                     </span>
                                     <span
-                                      className={`rounded-full px-3 py-1 ${
-                                        keyword.is_active
-                                          ? "bg-emerald-100 text-emerald-700"
-                                          : "bg-stone-200 text-stone-600"
-                                      }`}
+                                      className={`rounded-full px-3 py-1 ${keyword.is_active
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : "bg-stone-200 text-stone-600"
+                                        }`}
                                     >
                                       {keyword.is_active ? "Active" : "Paused"}
                                     </span>
@@ -6173,7 +6158,7 @@ export function IqxIntelligenceApp() {
               {activeWorkspaceTab === "keywords" ? (
                 <article
                   id="keywords"
-                  className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]"
+                  className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -6312,7 +6297,7 @@ export function IqxIntelligenceApp() {
               {activeWorkspaceTab === "projects" ? (
                 <article
                   id="projects"
-                  className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]"
+                  className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -6466,7 +6451,7 @@ export function IqxIntelligenceApp() {
               ) : null}
 
               {activeWorkspaceTab === "new-project" ? (
-                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                     New project
                   </p>
@@ -6518,7 +6503,7 @@ export function IqxIntelligenceApp() {
               ) : null}
 
               {activeWorkspaceTab === "profile" ? (
-                <article className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <article className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
                     <section className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
@@ -6725,7 +6710,7 @@ export function IqxIntelligenceApp() {
               {activeWorkspaceTab === "plans" ? (
                 <article
                   id="plans"
-                  className="rounded-[2rem] border border-white/60 bg-white/86 p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)]"
+                  className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -6750,11 +6735,10 @@ export function IqxIntelligenceApp() {
                     {plans.map((plan) => (
                       <article
                         key={plan.slug}
-                        className={`rounded-[1.5rem] border p-5 ${
-                          profile.plan?.slug === plan.slug
-                            ? "border-stone-900 bg-stone-950 text-stone-50"
-                            : "border-stone-200 bg-stone-50/90 text-stone-900"
-                        }`}
+                        className={`rounded-[1.5rem] border p-5 ${profile.plan?.slug === plan.slug
+                          ? "border-stone-900 bg-stone-950 text-stone-50"
+                          : "border-stone-200 bg-stone-50/90 text-stone-900"
+                          }`}
                       >
                         <h4 className="text-lg font-semibold tracking-[-0.03em]">
                           {plan.name}
@@ -6770,11 +6754,10 @@ export function IqxIntelligenceApp() {
                           type="button"
                           onClick={() => handleCheckout(plan.slug)}
                           disabled={isPending}
-                          className={`mt-4 rounded-full px-4 py-2 text-sm font-semibold ${
-                            profile.plan?.slug === plan.slug
-                              ? "border border-white/20 bg-white/10 text-stone-50"
-                              : "bg-stone-950 text-stone-50"
-                          }`}
+                          className={`mt-4 rounded-full px-4 py-2 text-sm font-semibold ${profile.plan?.slug === plan.slug
+                            ? "border border-white/20 bg-white/10 text-stone-50"
+                            : "bg-stone-950 text-stone-50"
+                            }`}
                         >
                           {profile.plan?.slug === plan.slug ? "Manage" : "Choose"}
                         </button>
@@ -6786,7 +6769,7 @@ export function IqxIntelligenceApp() {
             </section>
           </div>
         ) : (
-          <div className="rounded-[2.4rem] border border-white/60 bg-white/80 p-7 text-sm text-stone-500 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+          <div className="rounded-[2.4rem] border border-white/20 bg-white/80 p-7 text-sm text-stone-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
             Sign in or register to access projects, tracked keywords, and result streams.
           </div>
         )}
