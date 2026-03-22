@@ -23,7 +23,8 @@ return [
             'homepage' => 'https://www.tradewindsnews.com/',
             'access' => 'premium',
             'excerpt_only' => true,
-            'disable_discovery' => true,
+            // Sitemap is public — discovers article URLs without accessing gated content
+            'sitemap_paths' => ['/sitemap.xml'],
         ],
         [
             'key' => 'splash247',
@@ -72,7 +73,8 @@ return [
             'homepage' => 'https://www.joc.com/',
             'access' => 'premium',
             'excerpt_only' => true,
-            'disable_discovery' => true,
+            // Sitemap is public and returns ~100 recent articles — no auth needed
+            'sitemap_paths' => ['/sitemap.xml'],
         ],
         [
             'key' => 'the-maritime-standard',
@@ -129,7 +131,8 @@ return [
             'homepage' => 'https://www.dvz.de/',
             'access' => 'premium',
             'excerpt_only' => true,
-            'disable_discovery' => true,
+            // Sitemap is public — discovers article URLs without accessing gated content
+            'sitemap_paths' => ['/sitemap.xml'],
         ],
         [
             'key' => 'supply-chain-dive',
@@ -142,7 +145,8 @@ return [
             'homepage' => 'https://www.worldcargonews.com/',
             'access' => 'premium',
             'excerpt_only' => true,
-            'disable_discovery' => true,
+            // Sitemap is public (also has /sitemap.rss)
+            'sitemap_paths' => ['/sitemap.xml'],
         ],
         [
             'key' => 'cargo-talk',

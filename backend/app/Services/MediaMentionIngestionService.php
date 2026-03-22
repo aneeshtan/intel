@@ -63,7 +63,8 @@ class MediaMentionIngestionService
     public function backfillRecentArticles(
         ?int $lookbackDays = null,
         bool $force = false,
-        ?string $sourceKey = null
+        ?string $sourceKey = null,
+        ?callable $onProgress = null
     ): int
     {
         $lookbackDays ??= (int) config('media_sources.archive_lookback_days', 90);
@@ -82,12 +83,20 @@ class MediaMentionIngestionService
             }
 
             if (! $force && $this->sourceRecentlySynced($source['key'])) {
+                $onProgress && $onProgress($source['name'], null, null, 'skipped');
                 continue;
             }
 
+            $onProgress && $onProgress($source['name'], null, null, 'discovering');
             $candidates = $this->discoverArchiveCandidates($source, $since);
-            $stored += $this->storeArticlesForSource($source, $candidates, $since, $force);
+            $count = $candidates->count();
+
+            $onProgress && $onProgress($source['name'], $count, null, 'fetching');
+            $sourceStored = $this->storeArticlesForSource($source, $candidates, $since, $force);
+            $stored += $sourceStored;
+
             $this->markSourceSynced($source['key']);
+            $onProgress && $onProgress($source['name'], $count, $sourceStored, 'done');
         }
 
         return $stored;
@@ -404,6 +413,16 @@ class MediaMentionIngestionService
             return null;
         }
 
+        // For excerpt-only (premium/gated) sources: if the candidate came from a sitemap
+        // it won't have a title or body. Do a lightweight OG meta fetch to get at least
+        // the article title and public teaser description from the article's <head>.
+        if ($this->sourceUsesExcerptOnly($source) && empty($candidate['title']) && empty($candidate['body'])) {
+            $ogMeta = $this->fetchOgMeta($url);
+            if ($ogMeta) {
+                $candidate = array_merge($candidate, $ogMeta);
+            }
+        }
+
         $article = $this->sourceUsesExcerptOnly($source)
             ? $this->articleFromCandidateExcerpt($candidate, $candidatePublishedAt)
             : $this->fetchArticle($source, $url, $candidatePublishedAt);
@@ -416,6 +435,18 @@ class MediaMentionIngestionService
 
         if ($publishedAt && $publishedAt->lt($since)) {
             return null;
+        }
+
+        // Determine excerpt source for metadata tracking
+        $excerptSource = null;
+        if ($this->sourceUsesExcerptOnly($source)) {
+            if (! empty($candidate['_og_meta'])) {
+                $excerptSource = 'og_meta';
+            } elseif (! empty($candidate['body'])) {
+                $excerptSource = 'feed_excerpt';
+            } else {
+                $excerptSource = 'title_only';
+            }
         }
 
         $record = $existing ?: new MediaArticle([
@@ -437,9 +468,7 @@ class MediaMentionIngestionService
                 'lastmod' => $candidatePublishedAt?->toIso8601String(),
                 'backfilled_at' => now()->toIso8601String(),
                 'excerpt_only' => $this->sourceUsesExcerptOnly($source),
-                'excerpt_source' => $this->sourceUsesExcerptOnly($source)
-                    ? (! empty($candidate['body']) ? 'feed_excerpt' : 'title_only')
-                    : null,
+                'excerpt_source' => $excerptSource,
             ],
         ]);
 
@@ -707,7 +736,101 @@ class MediaMentionIngestionService
             'title' => $title ?: 'Untitled article',
             'body' => $body ?: $title,
             'author' => $author ?: null,
-            'published_at' => $fallbackPublishedAt,
+            'published_at' => $candidate['published_at'] instanceof Carbon
+                ? $candidate['published_at']
+                : $fallbackPublishedAt,
+        ];
+    }
+
+    /**
+     * Do a lightweight HTTP GET of an article URL and extract only the OG/meta
+     * tags from the <head> — title, description teaser, published date, and author.
+     *
+     * This is used for premium/gated sources whose sitemaps expose article URLs
+     * but no title or body. The public teaser visible before the paywall is
+     * available in og:description without any authentication.
+     *
+     * @return array{title: string, body: string, author: string|null, published_at: Carbon|null, _og_meta: true}|null
+     */
+    private function fetchOgMeta(string $url): ?array
+    {
+        try {
+            $response = Http::withUserAgent(config('media_sources.user_agent', 'Mozilla/5.0'))
+                ->timeout((int) config('media_sources.timeout_seconds', 5))
+                ->connectTimeout((int) config('media_sources.connect_timeout_seconds', 3))
+                ->withHeaders(['Accept' => 'text/html,application/xhtml+xml'])
+                ->get($url);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $html = $response->body();
+
+            // Only parse up to </head> for speed — we don't need the full body DOM
+            $headEnd = stripos($html, '</head>');
+            $headHtml = $headEnd !== false ? substr($html, 0, $headEnd + 7) : $html;
+
+        } catch (\Throwable $exception) {
+            Log::debug('OG meta fetch failed.', ['url' => $url, 'message' => $exception->getMessage()]);
+            return null;
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument;
+        $dom->loadHTML('<?xml encoding="utf-8" ?>' . $headHtml);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        $xpath = new \DOMXPath($dom);
+
+        $title = $this->firstXPathValue($xpath, [
+            '//meta[@property="og:title"]/@content',
+            '//meta[@name="twitter:title"]/@content',
+            '//title',
+        ]);
+
+        $description = $this->firstXPathValue($xpath, [
+            '//meta[@property="og:description"]/@content',
+            '//meta[@name="description"]/@content',
+            '//meta[@name="twitter:description"]/@content',
+        ]);
+
+        $author = $this->firstXPathValue($xpath, [
+            '//meta[@name="author"]/@content',
+        ]);
+
+        $publishedAtRaw = $this->firstXPathValue($xpath, [
+            '//meta[@property="article:published_time"]/@content',
+            '//meta[@name="pubdate"]/@content',
+        ]);
+
+        // Also try JSON-LD in the head for datePublished
+        $publishedAt = $publishedAtRaw ? $this->parseDate($publishedAtRaw) : null;
+        if (! $publishedAt) {
+            $scriptNodes = $xpath->query('//script[@type="application/ld+json"]');
+            foreach ($scriptNodes ?: [] as $node) {
+                $json = json_decode($node->textContent, true);
+                if (is_array($json) && ! empty($json['datePublished'])) {
+                    $publishedAt = $this->parseDate($json['datePublished']);
+                    break;
+                }
+            }
+        }
+
+        $title = $this->cleanText($title);
+        $description = $this->cleanText($description);
+
+        if ($title === '' && $description === '') {
+            return null;
+        }
+
+        return [
+            'title'        => $title,
+            'body'         => $description ?: $title,
+            'author'       => $this->cleanText($author) ?: null,
+            'published_at' => $publishedAt,
+            '_og_meta'     => true,  // flag for excerpt_source tracking
         ];
     }
 
