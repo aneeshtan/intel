@@ -61,6 +61,15 @@ STRIPE_PROFESSIONAL_PRICE_ID=
 STRIPE_ENTERPRISE_PRICE_ID=
 ```
 
+Set these before enabling Google sign-in:
+
+```bash
+FRONTEND_URL=https://intel.ctrlaltl.com
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=https://intel.ctrlaltl.com/backend/auth/google/callback
+```
+
 Media discovery tuning:
 
 ```bash

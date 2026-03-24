@@ -151,6 +151,31 @@ function getPathnameForAuthMode(mode: AuthMode) {
   return mode === "login" ? "/login" : "/register";
 }
 
+function readOAuthResultFromHash() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+
+  if (!hash) {
+    return null;
+  }
+
+  const params = new URLSearchParams(hash);
+  const token = params.get("auth_token");
+  const error = params.get("auth_error");
+  const message = params.get("auth_message");
+
+  if (!token && !error && !message) {
+    return null;
+  }
+
+  return { token, error, message };
+}
+
 type Plan = {
   id: number;
   name: string;
@@ -1482,6 +1507,14 @@ export function IqxIntelligenceApp() {
     pushPathname(nextPathname);
   };
 
+  const handleGoogleAuth = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.location.assign("/backend/auth/google/redirect");
+  };
+
   const clearSession = () => {
     clearStoredSessionToken();
     setToken(null);
@@ -1708,17 +1741,41 @@ export function IqxIntelligenceApp() {
   useEffect(() => {
     const initialize = async () => {
       try {
+        const oauthResult = readOAuthResultFromHash();
+
+        if (oauthResult) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
+
         const response = await apiRequest<{ data: Plan[] }>("/plans");
         setPlans(response.data);
 
-        const storedToken = getStoredSessionToken();
+        if (oauthResult?.error) {
+          setBootError(oauthResult.error);
+        }
+
+        if (oauthResult?.message) {
+          setFlashMessage(oauthResult.message);
+        }
+
+        const storedToken = oauthResult?.token ?? getStoredSessionToken();
 
         if (!storedToken) {
           return;
         }
 
+        if (oauthResult?.token) {
+          storeSessionToken(storedToken);
+        }
+
         setToken(storedToken);
         await hydrateSession(storedToken);
+
+        if (oauthResult?.token && typeof window !== "undefined") {
+          window.history.replaceState(null, "", "/");
+          setCurrentPathname("/");
+          setActiveWorkspaceTabState("results");
+        }
       } catch (error) {
         clearSession();
         setBootError(
@@ -3431,6 +3488,39 @@ export function IqxIntelligenceApp() {
                   className="mt-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {authMode === "register" ? "Create account" : "Sign in"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleAuth}
+                  disabled={isPending}
+                  className="rounded-full border border-stone-200 bg-white px-6 py-3 text-sm font-semibold text-stone-800 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="flex items-center justify-center gap-3">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill="#EA4335"
+                        d="M12.24 10.285V14.4h5.842c-.258 1.326-1.551 3.89-5.842 3.89-3.516 0-6.38-2.91-6.38-6.49s2.864-6.49 6.38-6.49c2.002 0 3.342.855 4.11 1.59l2.802-2.716C17.356 2.52 15.04 1.5 12.24 1.5 6.99 1.5 2.73 5.76 2.73 11.01s4.26 9.51 9.51 9.51c5.49 0 9.135-3.858 9.135-9.285 0-.624-.067-1.104-.151-1.575H12.24Z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M3.825 7.327 7.21 9.81c.916-1.817 2.802-3.075 5.03-3.075 2.003 0 3.342.855 4.11 1.59l2.802-2.716C17.356 2.52 15.04 1.5 12.24 1.5c-3.653 0-6.81 2.083-8.415 5.827Z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M12.24 20.52c2.73 0 5.02-.9 6.693-2.445l-3.093-2.52c-.83.58-1.94.99-3.6.99-4.273 0-5.556-2.547-5.824-3.855l-3.36 2.59c1.588 3.81 4.94 5.24 9.184 5.24Z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M3.825 7.327A9.45 9.45 0 0 0 2.73 11.01c0 1.326.267 2.59.744 3.77l3.36-2.59a5.97 5.97 0 0 1-.334-1.98c0-.683.12-1.346.35-1.98l-3.025-2.903Z"
+                      />
+                    </svg>
+                    <span>Continue with Google</span>
+                  </span>
                 </button>
               </div>
             </aside>

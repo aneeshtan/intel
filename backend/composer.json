@@ -13,6 +13,7 @@
         "laravel/cashier": "^16.4",
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.3",
+        "laravel/socialite": "^5.25",
         "laravel/tinker": "^2.10.1"
     },
     "require-dev": {
