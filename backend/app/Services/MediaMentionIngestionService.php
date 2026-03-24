@@ -495,12 +495,31 @@ class MediaMentionIngestionService
                 ]);
         }
 
-        $sitemapCandidates = $this->discoverSitemapUrls($source)
-            ->flatMap(fn (string $sitemapUrl) => $this->fetchSitemapCandidates($sitemapUrl, $source, $since))
-            ->filter(fn (array $candidate) => ! empty($candidate['url']));
+        $sitemapCandidates = collect();
+        $shouldProbeSitemaps = ! empty($source['sitemap_paths'])
+            || ! $feedUrl
+            || $feedCandidates->isEmpty();
 
-        return $feedCandidates
+        if ($shouldProbeSitemaps) {
+            $sitemapCandidates = $this->discoverSitemapUrls($source)
+                ->flatMap(fn (string $sitemapUrl) => $this->fetchSitemapCandidates($sitemapUrl, $source, $since))
+                ->filter(fn (array $candidate) => ! empty($candidate['url']));
+        }
+
+        $discoveredCandidates = $feedCandidates
             ->merge($sitemapCandidates)
+            ->unique('url')
+            ->values();
+
+        $homepageCandidates = $discoveredCandidates->count() < (int) config(
+            'media_sources.homepage_supplement_threshold_per_source',
+            5,
+        )
+            ? $this->discoverHomepageCandidates($source)
+            : collect();
+
+        return $discoveredCandidates
+            ->merge($homepageCandidates)
             ->filter(function (array $candidate) use ($source, $since): bool {
                 if (! $this->looksLikeArticleCandidate($candidate, $source)) {
                     return false;
@@ -515,6 +534,52 @@ class MediaMentionIngestionService
             ->values();
     }
 
+    private function discoverHomepageCandidates(array $source): Collection
+    {
+        $cacheKey = "media-homepage-discovery:{$source['key']}";
+        $limit = (int) config('media_sources.homepage_article_limit_per_source', 15);
+
+        return Cache::remember(
+            $cacheKey,
+            now()->addMinutes((int) config('media_sources.discovery_ttl_minutes', 30)),
+            function () use ($source, $limit): Collection {
+                $candidates = collect();
+
+                foreach ($this->sourceDiscoveryBases($source) as $pageUrl) {
+                    try {
+                        $response = $this->fetchUrlWithFallback($pageUrl);
+                    } catch (\Throwable $exception) {
+                        Log::warning('Media homepage discovery failed.', [
+                            'source' => $source['key'],
+                            'homepage' => $pageUrl,
+                            'message' => $exception->getMessage(),
+                        ]);
+
+                        continue;
+                    }
+
+                    if (! $response->successful()) {
+                        continue;
+                    }
+
+                    $candidates = $candidates->merge(
+                        $this->extractHomepageCandidatesFromHtml($response->body(), $pageUrl, $source)
+                    );
+
+                    if ($candidates->count() >= $limit) {
+                        break;
+                    }
+                }
+
+                return $candidates
+                    ->filter(fn (array $candidate) => ! empty($candidate['url']))
+                    ->unique('url')
+                    ->take($limit)
+                    ->values();
+            }
+        );
+    }
+
     private function discoverSitemapUrls(array $source): Collection
     {
         if (! empty($source['disable_sitemaps'])) {
@@ -525,7 +590,7 @@ class MediaMentionIngestionService
 
         return Cache::remember(
             $cacheKey,
-            now()->addMinutes((int) config('media_sources.discovery_ttl_minutes', 360)),
+            now()->addMinutes((int) config('media_sources.discovery_ttl_minutes', 30)),
             function () use ($source): Collection {
                 $urls = collect();
                 $robotsCandidates = collect();
@@ -1031,7 +1096,7 @@ class MediaMentionIngestionService
 
         return Cache::remember(
             $cacheKey,
-            now()->addMinutes((int) config('media_sources.discovery_ttl_minutes', 360)),
+            now()->addMinutes((int) config('media_sources.discovery_ttl_minutes', 30)),
             function () use ($source): ?string {
                 if (! empty($source['feed_url'])) {
                     return $source['feed_url'];
@@ -1090,14 +1155,58 @@ class MediaMentionIngestionService
         ];
     }
 
+    private function extractHomepageCandidatesFromHtml(string $html, string $pageUrl, array $source): Collection
+    {
+        if (! str_contains($html, '<a')) {
+            return collect();
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument;
+        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (! $loaded) {
+            return collect();
+        }
+
+        $xpath = new \DOMXPath($dom);
+
+        return collect(iterator_to_array($xpath->query('//a[@href]') ?: []))
+            ->map(function (\DOMElement $link) use ($pageUrl, $source): ?array {
+                $resolvedUrl = $this->resolveUrl($pageUrl, (string) $link->getAttribute('href'));
+
+                if (! $resolvedUrl || ! $this->urlMatchesSourceHost($resolvedUrl, $source)) {
+                    return null;
+                }
+
+                $title = $this->cleanText(
+                    (string) ($link->getAttribute('title') ?: $link->textContent),
+                    300,
+                );
+
+                return [
+                    'url' => $resolvedUrl,
+                    'title' => $title !== '' ? $title : null,
+                    'published_at' => null,
+                ];
+            })
+            ->filter();
+    }
+
     private function commonSitemapPaths(): array
     {
         return [
             '/sitemap.xml',
+            '/sitemap.xml.gz',
             '/sitemap_index.xml',
+            '/sitemap_index.xml.gz',
             '/post-sitemap.xml',
             '/news-sitemap.xml',
+            '/sitemap-news.xml',
             '/article-sitemap.xml',
+            '/sitemap.rss',
         ];
     }
 
@@ -1106,7 +1215,23 @@ class MediaMentionIngestionService
         $homepage = trim((string) ($source['homepage'] ?? ''));
         $origin = $this->sourceOrigin($homepage);
 
+        $configuredPages = collect($source['discovery_pages'] ?? [])
+            ->filter(fn ($value) => is_string($value) && trim($value) !== '')
+            ->map(function (string $value) use ($homepage, $origin): ?string {
+                if (preg_match('#^https?://#i', $value) === 1) {
+                    return rtrim($value, '/');
+                }
+
+                $base = $homepage !== '' ? $homepage : ($origin ?? '');
+
+                return $base !== ''
+                    ? rtrim($this->joinDiscoveryUrl($base, '/'.ltrim($value, '/')), '/')
+                    : null;
+            })
+            ->filter();
+
         return collect([$origin, $homepage])
+            ->merge($configuredPages)
             ->filter()
             ->map(fn (string $value) => rtrim($value, '/'))
             ->unique()
@@ -1133,6 +1258,44 @@ class MediaMentionIngestionService
     private function joinDiscoveryUrl(string $baseUrl, string $path): string
     {
         return rtrim($baseUrl, '/').$path;
+    }
+
+    private function resolveUrl(string $baseUrl, string $href): ?string
+    {
+        $href = trim($href);
+
+        if (
+            $href === ''
+            || str_starts_with($href, '#')
+            || preg_match('/^(?:javascript|mailto|tel):/i', $href) === 1
+        ) {
+            return null;
+        }
+
+        try {
+            $resolved = (string) \GuzzleHttp\Psr7\UriResolver::resolve(
+                new \GuzzleHttp\Psr7\Uri($baseUrl),
+                new \GuzzleHttp\Psr7\Uri($href),
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return preg_replace('/#.*$/', '', $resolved) ?: $resolved;
+    }
+
+    private function urlMatchesSourceHost(string $url, array $source): bool
+    {
+        $host = $this->normalizeSourceValue(parse_url($url, PHP_URL_HOST));
+
+        if ($host === '') {
+            return false;
+        }
+
+        return $this->sourceDiscoveryBases($source)
+            ->map(fn (string $baseUrl) => $this->normalizeSourceValue(parse_url($baseUrl, PHP_URL_HOST)))
+            ->filter()
+            ->contains($host);
     }
 
     private function extractFeedUrlFromHtml(string $html, string $homepage): ?string
@@ -1486,7 +1649,11 @@ class MediaMentionIngestionService
             if ($response->successful()) {
                 return $response;
             }
-            
+
+            if (app()->runningUnitTests()) {
+                return $response;
+            }
+
             if (in_array($response->status(), [403, 503])) {
                 Log::info("HTTP {$response->status()} on {$url}, failing over to Puppeteer.");
                 $html = $this->fetchWithPuppeteer($url);
@@ -1496,9 +1663,13 @@ class MediaMentionIngestionService
                     );
                 }
             }
-            
+
             return $response;
         } catch (\Throwable $exception) {
+            if (app()->runningUnitTests()) {
+                throw $exception;
+            }
+
             Log::warning("Fast fetch failed for {$url}: {$exception->getMessage()}. Failing over to Puppeteer.");
             $html = $this->fetchWithPuppeteer($url);
             if ($html) {

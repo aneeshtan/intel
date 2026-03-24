@@ -65,7 +65,11 @@ Media discovery tuning:
 
 ```bash
 MEDIA_ARCHIVE_LOOKBACK_DAYS=90
-MEDIA_DISCOVERY_ARTICLE_LIMIT_PER_SOURCE=20
+MEDIA_DISCOVERY_TTL_MINUTES=30
+MEDIA_DISCOVERY_ARTICLE_LIMIT_PER_SOURCE=40
+MEDIA_ARCHIVE_SITEMAP_LIMIT_PER_SOURCE=20
+MEDIA_HOMEPAGE_ARTICLE_LIMIT_PER_SOURCE=15
+MEDIA_HOMEPAGE_SUPPLEMENT_THRESHOLD_PER_SOURCE=5
 MEDIA_REPAIR_SYNC_LOOKBACK_DAYS=2
 ```
 
@@ -73,7 +77,7 @@ MEDIA_REPAIR_SYNC_LOOKBACK_DAYS=2
 
 The scalable media ingestion flow is split into two stages:
 
-- `media:discover` runs every 5 minutes via the Laravel scheduler and only discovers recent candidate URLs from feeds and sitemaps.
+- `media:discover` runs every 30 minutes via the Laravel scheduler and discovers recent candidate URLs from feeds, sitemaps, and homepage/article index links.
 - Each discovered URL is queued as a `FetchMediaArticleJob`, which fetches the full article, stores it, and generates mentions.
 - `media:ingest` remains available as a heavier repair/backfill command and is scheduled once daily for a short lookback window.
 

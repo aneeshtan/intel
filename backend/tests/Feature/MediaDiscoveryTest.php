@@ -220,6 +220,134 @@ class MediaDiscoveryTest extends TestCase
         });
     }
 
+    public function test_media_discovery_falls_back_to_homepage_article_links_when_feeds_and_sitemaps_are_missing(): void
+    {
+        Bus::fake();
+
+        config()->set('media_sources.sources', [
+            [
+                'key' => 'regional-maritime-news',
+                'name' => 'Regional Maritime News',
+                'homepage' => 'https://news.example.test/latest',
+                'include_url_patterns' => [
+                    '#^https://news\.example\.test/latest/.+#i',
+                ],
+            ],
+        ]);
+
+        Http::fake([
+            'https://news.example.test/latest' => Http::response(
+                <<<'HTML'
+                <html>
+                  <body>
+                    <a href="/latest/sealead-expands-terminal-coverage">SeaLead expands terminal coverage</a>
+                    <a href="https://external.example.test/story">External link</a>
+                    <a href="/latest">All latest news</a>
+                  </body>
+                </html>
+                HTML,
+                200,
+                ['Content-Type' => 'text/html']
+            ),
+            '*' => Http::response('', 404),
+        ]);
+
+        $this->artisan('media:discover --days=7')
+            ->expectsOutputToContain('Media discovery queued 1 article fetch job(s).')
+            ->assertSuccessful();
+
+        Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
+            return ($job->source['key'] ?? null) === 'regional-maritime-news'
+                && ($job->candidate['url'] ?? null) === 'https://news.example.test/latest/sealead-expands-terminal-coverage';
+        });
+    }
+
+    public function test_media_discovery_supplements_sparse_feed_results_with_homepage_links(): void
+    {
+        Bus::fake();
+
+        config()->set('media_sources.homepage_supplement_threshold_per_source', 3);
+        config()->set('media_sources.sources', [
+            [
+                'key' => 'sparse-feed-news',
+                'name' => 'Sparse Feed News',
+                'homepage' => 'https://coverage.example.test/news',
+                'feed_url' => 'https://coverage.example.test/feed.xml',
+                'disable_sitemaps' => true,
+                'include_url_patterns' => [
+                    '#^https://coverage\.example\.test/news/.+#i',
+                ],
+            ],
+        ]);
+
+        Http::fake([
+            'https://coverage.example.test/feed.xml' => Http::response(
+                <<<'XML'
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0">
+                  <channel>
+                    <title>Sparse Feed News</title>
+                    <item>
+                      <title>Port congestion eases in Gulf terminals</title>
+                      <link>https://coverage.example.test/news/port-congestion-eases</link>
+                      <description>Feed item.</description>
+                      <pubDate>Wed, 18 Mar 2026 10:00:00 GMT</pubDate>
+                    </item>
+                  </channel>
+                </rss>
+                XML,
+                200,
+                ['Content-Type' => 'application/rss+xml']
+            ),
+            'https://coverage.example.test/news' => Http::response(
+                <<<'HTML'
+                <html>
+                  <body>
+                    <a href="/news/port-congestion-eases">Port congestion eases in Gulf terminals</a>
+                    <a href="/news/sealead-adds-red-sea-routing-buffer">SeaLead adds Red Sea routing buffer</a>
+                  </body>
+                </html>
+                HTML,
+                200,
+                ['Content-Type' => 'text/html']
+            ),
+            'https://coverage.example.test' => Http::response('<html><body></body></html>', 200),
+            '*' => Http::response('', 404),
+        ]);
+
+        $this->artisan('media:discover --days=7')
+            ->expectsOutputToContain('Media discovery queued 2 article fetch job(s).')
+            ->assertSuccessful();
+
+        Bus::assertDispatched(FetchMediaArticleJob::class, 2);
+        Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
+            return ($job->source['key'] ?? null) === 'sparse-feed-news'
+                && ($job->candidate['url'] ?? null) === 'https://coverage.example.test/news/sealead-adds-red-sea-routing-buffer';
+        });
+    }
+
+    public function test_source_discovery_bases_include_configured_discovery_pages(): void
+    {
+        $service = app(MediaMentionIngestionService::class);
+        $sourceDiscoveryBases = new \ReflectionMethod($service, 'sourceDiscoveryBases');
+        $sourceDiscoveryBases->setAccessible(true);
+
+        $bases = $sourceDiscoveryBases->invoke($service, [
+            'homepage' => 'https://carrier.example.test/news',
+            'discovery_pages' => [
+                '/press-room',
+                'https://carrier.example.test/media-centre',
+            ],
+        ])->all();
+
+        $this->assertSame([
+            'https://carrier.example.test',
+            'https://carrier.example.test/news',
+            'https://carrier.example.test/news/press-room',
+            'https://carrier.example.test/media-centre',
+        ], $bases);
+    }
+
     public function test_source_title_filters_ignore_feed_items_with_excluded_titles(): void
     {
         $service = app(MediaMentionIngestionService::class);

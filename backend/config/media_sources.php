@@ -2,14 +2,16 @@
 
 return [
     'sync_ttl_minutes' => env('MEDIA_SYNC_TTL_MINUTES', 15),
-    'discovery_ttl_minutes' => env('MEDIA_DISCOVERY_TTL_MINUTES', 360),
+    'discovery_ttl_minutes' => env('MEDIA_DISCOVERY_TTL_MINUTES', 30),
     'archive_sync_ttl_minutes' => env('MEDIA_ARCHIVE_SYNC_TTL_MINUTES', 360),
     'timeout_seconds' => env('MEDIA_HTTP_TIMEOUT_SECONDS', 5),
     'connect_timeout_seconds' => env('MEDIA_HTTP_CONNECT_TIMEOUT_SECONDS', 3),
     'archive_lookback_days' => env('MEDIA_ARCHIVE_LOOKBACK_DAYS', 90),
     'archive_article_limit_per_source' => env('MEDIA_ARCHIVE_ARTICLE_LIMIT_PER_SOURCE', 80),
-    'discovery_article_limit_per_source' => env('MEDIA_DISCOVERY_ARTICLE_LIMIT_PER_SOURCE', 20),
-    'archive_sitemap_limit_per_source' => env('MEDIA_ARCHIVE_SITEMAP_LIMIT_PER_SOURCE', 12),
+    'discovery_article_limit_per_source' => env('MEDIA_DISCOVERY_ARTICLE_LIMIT_PER_SOURCE', 40),
+    'archive_sitemap_limit_per_source' => env('MEDIA_ARCHIVE_SITEMAP_LIMIT_PER_SOURCE', 20),
+    'homepage_article_limit_per_source' => env('MEDIA_HOMEPAGE_ARTICLE_LIMIT_PER_SOURCE', 15),
+    'homepage_supplement_threshold_per_source' => env('MEDIA_HOMEPAGE_SUPPLEMENT_THRESHOLD_PER_SOURCE', 5),
     'repair_sync_lookback_days' => env('MEDIA_REPAIR_SYNC_LOOKBACK_DAYS', 2),
     'user_agent' => env(
         'MEDIA_HTTP_USER_AGENT',

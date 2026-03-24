@@ -14,7 +14,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command(DiscoverMediaArticles::class)
-    ->everyFiveMinutes()
+    ->everyThirtyMinutes()
     ->when(fn () => ! app(AutoIndexingControlService::class)->isPaused())
     ->withoutOverlapping();
 Schedule::command(ImportRedditMentions::class)->everyFifteenMinutes()->withoutOverlapping();

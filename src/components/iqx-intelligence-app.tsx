@@ -2,8 +2,14 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { motion } from "framer-motion";
+import { usePathname } from "next/navigation";
+import { apiRequest } from "@/lib/api-client";
+import {
+  clearStoredSessionToken,
+  getStoredSessionToken,
+  storeSessionToken,
+} from "@/lib/auth-session";
 
-const TOKEN_KEY = "iqx-intelligence-token";
 const inputClassName =
   "mt-2 w-full rounded-2xl border border-stone-200 bg-white/40 backdrop-blur-xl px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-400";
 
@@ -79,6 +85,71 @@ type WorkspaceTab =
   | "plans";
 
 type AnalysisWindowDays = 14 | 30 | 90;
+
+const workspaceTabPathnames: Record<WorkspaceTab, string> = {
+  results: "/",
+  analysis: "/analysis",
+  sources: "/sources",
+  articles: "/admin",
+  alerts: "/alerts",
+  profile: "/profile",
+  keywords: "/keywords",
+  projects: "/projects",
+  "new-project": "/projects/new",
+  plans: "/plans",
+};
+
+function getWorkspaceTabFromPathname(pathname: string): WorkspaceTab {
+  if (pathname === "/analysis") {
+    return "analysis";
+  }
+
+  if (pathname === "/sources") {
+    return "sources";
+  }
+
+  if (pathname === "/admin") {
+    return "articles";
+  }
+
+  if (pathname === "/alerts") {
+    return "alerts";
+  }
+
+  if (pathname === "/profile") {
+    return "profile";
+  }
+
+  if (pathname === "/keywords") {
+    return "keywords";
+  }
+
+  if (pathname === "/projects/new") {
+    return "new-project";
+  }
+
+  if (pathname === "/projects") {
+    return "projects";
+  }
+
+  if (pathname === "/plans") {
+    return "plans";
+  }
+
+  return "results";
+}
+
+function getPathnameForWorkspaceTab(tab: WorkspaceTab) {
+  return workspaceTabPathnames[tab];
+}
+
+function getAuthModeFromPathname(pathname: string): AuthMode {
+  return pathname === "/login" ? "login" : "register";
+}
+
+function getPathnameForAuthMode(mode: AuthMode) {
+  return mode === "login" ? "/login" : "/register";
+}
 
 type Plan = {
   id: number;
@@ -803,79 +874,6 @@ function wait(ms: number) {
   });
 }
 
-async function apiRequest<T>(
-  path: string,
-  options: RequestInit = {},
-  token?: string | null,
-): Promise<T> {
-  const headers = new Headers(options.headers);
-
-  if (!headers.has("Accept")) {
-    headers.set("Accept", "application/json");
-  }
-
-  if (options.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(`/backend${path}`, {
-      ...options,
-      headers,
-    });
-  } catch {
-    throw new Error(
-      "The backend is unavailable. Start the Laravel API server or verify the BACKEND_URL setting.",
-    );
-  }
-
-  const text = await response.text();
-  const contentType = response.headers.get("content-type") ?? "";
-  let payload: Record<string, unknown> = {};
-  const isJsonResponse = contentType.includes("application/json");
-
-  if (text) {
-    if (isJsonResponse) {
-      try {
-        payload = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        throw new Error("The backend returned invalid JSON.");
-      }
-    } else if (response.ok) {
-      throw new Error("The backend returned an unexpected response format.");
-    }
-  }
-
-  if (!response.ok) {
-    const validationErrors = payload.errors as Record<string, string[]> | undefined;
-    const validationMessage = validationErrors
-      ? Object.values(validationErrors).flat()[0]
-      : undefined;
-    const plainTextMessage =
-      !isJsonResponse && text && !text.trim().startsWith("<") ? text.trim() : undefined;
-    const proxyFailureMessage =
-      !isJsonResponse && [500, 502, 503, 504].includes(response.status)
-        ? "The backend is unavailable. Start the Laravel API server or verify the BACKEND_URL setting."
-        : undefined;
-
-    throw new Error(
-      validationMessage ??
-      (payload.message as string | undefined) ??
-      proxyFailureMessage ??
-      plainTextMessage ??
-      "The request could not be completed.",
-    );
-  }
-
-  return payload as T;
-}
-
 function StatCard({
   label,
   value,
@@ -1371,7 +1369,10 @@ function MentionReachChart({
 }
 
 export function IqxIntelligenceApp() {
-  const [authMode, setAuthMode] = useState<AuthMode>("register");
+  const initialPathname = usePathname();
+  const [currentPathname, setCurrentPathname] = useState(initialPathname);
+  const routeWorkspaceTab = getWorkspaceTabFromPathname(currentPathname);
+  const [authMode, setAuthMode] = useState<AuthMode>(() => getAuthModeFromPathname(initialPathname));
   const [plans, setPlans] = useState<Plan[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -1387,7 +1388,9 @@ export function IqxIntelligenceApp() {
   const [adminRefreshState, setAdminRefreshState] = useState<AdminRefreshState>(() =>
     createAdminRefreshState(),
   );
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("results");
+  const [activeWorkspaceTab, setActiveWorkspaceTabState] = useState<WorkspaceTab>(
+    routeWorkspaceTab,
+  );
   const [bootError, setBootError] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [isBooting, setIsBooting] = useState(true);
@@ -1454,8 +1457,33 @@ export function IqxIntelligenceApp() {
     matchType: "phrase",
   });
 
+  const pushPathname = (nextPathname: string) => {
+    if (typeof window === "undefined" || currentPathname === nextPathname) {
+      return;
+    }
+
+    window.history.pushState(null, "", nextPathname);
+    setCurrentPathname(nextPathname);
+  };
+
+  const setActiveWorkspaceTab = (tab: WorkspaceTab) => {
+    const nextTab =
+      tab === "articles" && !profile?.roles.includes("admin") ? "results" : tab;
+    const nextPathname = getPathnameForWorkspaceTab(nextTab);
+
+    setActiveWorkspaceTabState(nextTab);
+    pushPathname(nextPathname);
+  };
+
+  const setAuthRouteMode = (mode: AuthMode) => {
+    const nextPathname = getPathnameForAuthMode(mode);
+
+    setAuthMode(mode);
+    pushPathname(nextPathname);
+  };
+
   const clearSession = () => {
-    window.localStorage.removeItem(TOKEN_KEY);
+    clearStoredSessionToken();
     setToken(null);
     setProfile(null);
     setProjects([]);
@@ -1468,7 +1496,7 @@ export function IqxIntelligenceApp() {
     setCapturedArticles(null);
     setAdminWorkspaceData(null);
     setAdminRefreshState(createAdminRefreshState());
-    setActiveWorkspaceTab("results");
+    setActiveWorkspaceTabState("results");
   };
 
   const loadProjectDetail = async (authToken: string, projectId: number) => {
@@ -1683,7 +1711,7 @@ export function IqxIntelligenceApp() {
         const response = await apiRequest<{ data: Plan[] }>("/plans");
         setPlans(response.data);
 
-        const storedToken = window.localStorage.getItem(TOKEN_KEY);
+        const storedToken = getStoredSessionToken();
 
         if (!storedToken) {
           return;
@@ -1705,6 +1733,28 @@ export function IqxIntelligenceApp() {
     // The app bootstraps once on mount and then manages session state explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPathname(window.location.pathname);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    setActiveWorkspaceTabState(routeWorkspaceTab);
+  }, [routeWorkspaceTab]);
+
+  useEffect(() => {
+    if (!profile) {
+      setAuthMode(getAuthModeFromPathname(currentPathname));
+    }
+  }, [currentPathname, profile]);
 
   useEffect(() => {
     setProfileForm({
@@ -1752,6 +1802,16 @@ export function IqxIntelligenceApp() {
     void loadCapturedArticles(token, adminArticlesPage, adminArticlesQuery);
   }, [activeWorkspaceTab, adminArticlesPage, adminArticlesQuery, profile, token]);
 
+  useEffect(() => {
+    if (profile && routeWorkspaceTab === "articles" && !profile.roles.includes("admin")) {
+      setActiveWorkspaceTabState("results");
+      if (typeof window !== "undefined" && currentPathname !== "/") {
+        window.history.replaceState(null, "", "/");
+        setCurrentPathname("/");
+      }
+    }
+  }, [currentPathname, profile, routeWorkspaceTab]);
+
   const handleAuthSubmit = () => {
     startTransition(async () => {
       try {
@@ -1776,7 +1836,7 @@ export function IqxIntelligenceApp() {
           body: JSON.stringify(payload),
         });
 
-        window.localStorage.setItem(TOKEN_KEY, response.token);
+        storeSessionToken(response.token);
         setToken(response.token);
         setFlashMessage(
           authMode === "register"
@@ -1790,8 +1850,8 @@ export function IqxIntelligenceApp() {
           password: "",
           passwordConfirmation: "",
         });
-        setActiveWorkspaceTab("results");
         await hydrateSession(response.token);
+        setActiveWorkspaceTab("results");
       } catch (error) {
         setBootError(error instanceof Error ? error.message : "Authentication failed.");
       }
@@ -1808,6 +1868,7 @@ export function IqxIntelligenceApp() {
         // Clear the local session even if the token was already invalid server-side.
       } finally {
         clearSession();
+        pushPathname("/login");
         setFlashMessage("You have been signed out.");
       }
     });
@@ -3174,6 +3235,7 @@ export function IqxIntelligenceApp() {
     },
   };
   const currentTabCopy = activeTabCopy[activeWorkspaceTab];
+  const showAnonymousExperience = !isBooting && !profile;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[var(--canvas)] text-stone-950">
@@ -3187,7 +3249,9 @@ export function IqxIntelligenceApp() {
             </h1>
 
             <nav className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto text-sm text-stone-600 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-3">
-              {profile
+              {isBooting ? (
+                <div className="h-10 flex-1" aria-hidden="true" />
+              ) : profile
                 ? headerWorkspaceTabs.map((item) => (
                   <button
                     key={item.key}
@@ -3215,7 +3279,7 @@ export function IqxIntelligenceApp() {
         </header>
       </div>
 
-      {!profile ? (
+      {showAnonymousExperience ? (
         <section
           id="overview"
           className="relative mx-auto flex max-w-7xl scroll-mt-28 flex-col px-4 pb-10 pt-8 sm:px-10 sm:pb-12 sm:pt-10 lg:px-12"
@@ -3254,7 +3318,7 @@ export function IqxIntelligenceApp() {
               <div className="flex gap-2 rounded-full border border-stone-200 bg-stone-50 p-1">
                 <button
                   type="button"
-                  onClick={() => setAuthMode("register")}
+                  onClick={() => setAuthRouteMode("register")}
                   className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${authMode === "register"
                     ? "bg-stone-950 text-stone-50"
                     : "text-stone-600"
@@ -3264,7 +3328,7 @@ export function IqxIntelligenceApp() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAuthMode("login")}
+                  onClick={() => setAuthRouteMode("login")}
                   className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${authMode === "login" ? "bg-stone-950 text-stone-50" : "text-stone-600"
                     }`}
                 >
