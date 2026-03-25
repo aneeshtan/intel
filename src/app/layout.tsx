@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   title: "IQX Intelligence",
   description:
     "IQX Intelligence is a maritime media monitoring platform for tracking keywords, narratives, competitors, and risk signals across LinkedIn, Reddit, and industry news.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
