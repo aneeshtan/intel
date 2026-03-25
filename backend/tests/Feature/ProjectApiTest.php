@@ -282,16 +282,16 @@ class ProjectApiTest extends TestCase
         $user->attachRole($role);
 
         $project = $user->projects()->create([
-            'name' => 'SeaLead Watch',
-            'slug' => 'sealead-watch',
-            'description' => 'Tracks SeaLead coverage.',
+            'name' => 'Aquila Lines Watch',
+            'slug' => 'aquila-lines-watch',
+            'description' => 'Tracks Aquila Lines coverage.',
             'audience' => 'Operators',
             'status' => 'active',
             'monitored_platforms' => ['media'],
         ]);
 
         $keyword = $project->trackedKeywords()->create([
-            'keyword' => 'SeaLead',
+            'keyword' => 'Aquila Lines',
             'platform' => 'media',
             'match_type' => 'phrase',
             'is_active' => true,
@@ -303,8 +303,8 @@ class ProjectApiTest extends TestCase
             'source_url' => 'https://alpha.example.test',
             'external_id' => 'alpha-1',
             'url' => 'https://alpha.example.test/articles/1',
-            'title' => 'SeaLead expands from alpha',
-            'body' => 'SeaLead appears in the alpha source article.',
+            'title' => 'Aquila Lines expands from alpha',
+            'body' => 'Aquila Lines appears in the alpha source article.',
             'published_at' => now()->subHour(),
         ]);
 
@@ -314,8 +314,8 @@ class ProjectApiTest extends TestCase
             'source_url' => 'https://beta.example.test',
             'external_id' => 'beta-1',
             'url' => 'https://beta.example.test/articles/1',
-            'title' => 'SeaLead expands from beta',
-            'body' => 'SeaLead appears in the beta source article.',
+            'title' => 'Aquila Lines expands from beta',
+            'body' => 'Aquila Lines appears in the beta source article.',
             'published_at' => now()->subHour(),
         ]);
 
@@ -330,13 +330,13 @@ class ProjectApiTest extends TestCase
         $this->assertDatabaseHas('mentions', [
             'project_id' => $project->id,
             'tracked_keyword_id' => $keyword->id,
-            'title' => 'SeaLead expands from alpha',
+            'title' => 'Aquila Lines expands from alpha',
         ]);
 
         $this->assertDatabaseMissing('mentions', [
             'project_id' => $project->id,
             'tracked_keyword_id' => $keyword->id,
-            'title' => 'SeaLead expands from beta',
+            'title' => 'Aquila Lines expands from beta',
         ]);
     }
 
@@ -361,7 +361,7 @@ class ProjectApiTest extends TestCase
         ]);
 
         $keyword = $project->trackedKeywords()->create([
-            'keyword' => 'SeaLead',
+            'keyword' => 'Aquila Lines',
             'platform' => 'media',
             'match_type' => 'phrase',
             'is_active' => true,
@@ -372,8 +372,8 @@ class ProjectApiTest extends TestCase
             'tracked_keyword_id' => $keyword->id,
             'source' => 'media',
             'external_id' => 'sentiment-override-target',
-            'title' => 'SeaLead expands service options',
-            'body' => 'SeaLead was mentioned in a neutral operational update.',
+            'title' => 'Aquila Lines expands service options',
+            'body' => 'Aquila Lines was mentioned in a neutral operational update.',
             'sentiment' => 'neutral',
             'published_at' => now(),
             'metadata' => ['source_name' => 'The Loadstar'],
@@ -537,7 +537,7 @@ class ProjectApiTest extends TestCase
         ]);
 
         $keyword = $project->trackedKeywords()->create([
-            'keyword' => 'SeaLead',
+            'keyword' => 'Aquila Lines',
             'platform' => 'media',
             'match_type' => 'phrase',
             'is_active' => true,
@@ -553,7 +553,7 @@ class ProjectApiTest extends TestCase
             ->first();
 
         $this->assertNotNull($article);
-        $this->assertStringContainsString('SeaLead', $article->body);
+        $this->assertStringContainsString('Aquila Lines', $article->body);
 
         $this->assertDatabaseHas('mentions', [
             'project_id' => $project->id,
@@ -686,7 +686,7 @@ class ProjectApiTest extends TestCase
                     <article>
                       <h1>Carrier pricing softens despite disruption fears</h1>
                       <p>{$leadingParagraph}</p>
-                      <p>SeaLead withdrew its last ship from the route after this month&apos;s sailing.</p>
+                      <p>Aquila Lines withdrew its last ship from the route after this month&apos;s sailing.</p>
                     </article>
                   </body>
                 </html>

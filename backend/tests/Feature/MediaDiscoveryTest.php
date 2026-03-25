@@ -32,11 +32,11 @@ class MediaDiscoveryTest extends TestCase
                   <channel>
                     <title>Test Maritime Feed</title>
                     <item>
-                      <title>SeaLead launches a new route</title>
-                      <link>https://feeds.example.test/articles/sealead-route</link>
-                      <description>SeaLead expands its service footprint.</description>
+                      <title>Aquila Lines launches a new route</title>
+                      <link>https://feeds.example.test/articles/aquila-lines-route</link>
+                      <description>Aquila Lines expands its service footprint.</description>
                       <pubDate>Mon, 17 Mar 2026 09:00:00 GMT</pubDate>
-                      <guid>test-sealead-route</guid>
+                      <guid>test-aquila-lines-route</guid>
                     </item>
                   </channel>
                 </rss>
@@ -52,7 +52,7 @@ class MediaDiscoveryTest extends TestCase
 
         Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
             return ($job->source['key'] ?? null) === 'test-maritime-feed'
-                && ($job->candidate['url'] ?? null) === 'https://feeds.example.test/articles/sealead-route';
+                && ($job->candidate['url'] ?? null) === 'https://feeds.example.test/articles/aquila-lines-route';
         });
     }
 
@@ -199,7 +199,7 @@ class MediaDiscoveryTest extends TestCase
                 <?xml version="1.0" encoding="UTF-8"?>
                 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
                   <url>
-                    <loc>https://feeds.example.test/en/news/sealead-expands-gulf-coverage</loc>
+                    <loc>https://feeds.example.test/en/news/aquila-lines-expands-gulf-coverage</loc>
                     <lastmod>2026-03-18T09:00:00Z</lastmod>
                   </url>
                 </urlset>
@@ -216,7 +216,7 @@ class MediaDiscoveryTest extends TestCase
 
         Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
             return ($job->source['key'] ?? null) === 'dp-world-news'
-                && ($job->candidate['url'] ?? null) === 'https://feeds.example.test/en/news/sealead-expands-gulf-coverage';
+                && ($job->candidate['url'] ?? null) === 'https://feeds.example.test/en/news/aquila-lines-expands-gulf-coverage';
         });
     }
 
@@ -240,7 +240,7 @@ class MediaDiscoveryTest extends TestCase
                 <<<'HTML'
                 <html>
                   <body>
-                    <a href="/latest/sealead-expands-terminal-coverage">SeaLead expands terminal coverage</a>
+                    <a href="/latest/aquila-lines-expands-terminal-coverage">Aquila Lines expands terminal coverage</a>
                     <a href="https://external.example.test/story">External link</a>
                     <a href="/latest">All latest news</a>
                   </body>
@@ -258,7 +258,7 @@ class MediaDiscoveryTest extends TestCase
 
         Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
             return ($job->source['key'] ?? null) === 'regional-maritime-news'
-                && ($job->candidate['url'] ?? null) === 'https://news.example.test/latest/sealead-expands-terminal-coverage';
+                && ($job->candidate['url'] ?? null) === 'https://news.example.test/latest/aquila-lines-expands-terminal-coverage';
         });
     }
 
@@ -304,7 +304,7 @@ class MediaDiscoveryTest extends TestCase
                 <html>
                   <body>
                     <a href="/news/port-congestion-eases">Port congestion eases in Gulf terminals</a>
-                    <a href="/news/sealead-adds-red-sea-routing-buffer">SeaLead adds Red Sea routing buffer</a>
+                    <a href="/news/aquila-lines-adds-red-sea-routing-buffer">Aquila Lines adds Red Sea routing buffer</a>
                   </body>
                 </html>
                 HTML,
@@ -322,7 +322,7 @@ class MediaDiscoveryTest extends TestCase
         Bus::assertDispatched(FetchMediaArticleJob::class, 2);
         Bus::assertDispatched(FetchMediaArticleJob::class, function (FetchMediaArticleJob $job): bool {
             return ($job->source['key'] ?? null) === 'sparse-feed-news'
-                && ($job->candidate['url'] ?? null) === 'https://coverage.example.test/news/sealead-adds-red-sea-routing-buffer';
+                && ($job->candidate['url'] ?? null) === 'https://coverage.example.test/news/aquila-lines-adds-red-sea-routing-buffer';
         });
     }
 
@@ -476,24 +476,24 @@ class MediaDiscoveryTest extends TestCase
         ]);
 
         $keyword = $project->trackedKeywords()->create([
-            'keyword' => 'SeaLead',
+            'keyword' => 'Aquila Lines',
             'platform' => 'media',
             'match_type' => 'phrase',
             'is_active' => true,
         ]);
 
         Http::fake([
-            'https://feeds.example.test/articles/sealead-route' => Http::response(
+            'https://feeds.example.test/articles/aquila-lines-route' => Http::response(
                 <<<'HTML'
                 <html>
                   <head>
-                    <title>SeaLead launches a new route</title>
+                    <title>Aquila Lines launches a new route</title>
                     <meta property="article:published_time" content="2026-03-17T09:00:00Z" />
                   </head>
                   <body>
                     <article>
-                      <h1>SeaLead launches a new route</h1>
-                      <p>SeaLead announced a new Asia-Europe connection for late March sailings.</p>
+                      <h1>Aquila Lines launches a new route</h1>
+                      <p>Aquila Lines announced a new Asia-Europe connection for late March sailings.</p>
                       <p>The carrier said the route will improve reliability and equipment availability.</p>
                     </article>
                   </body>
@@ -511,7 +511,7 @@ class MediaDiscoveryTest extends TestCase
                 'homepage' => 'https://feeds.example.test/',
             ],
             [
-                'url' => 'https://feeds.example.test/articles/sealead-route',
+                'url' => 'https://feeds.example.test/articles/aquila-lines-route',
                 'feed_url' => 'https://feeds.example.test/rss.xml',
                 'published_at' => '2026-03-17T09:00:00Z',
             ],
@@ -523,14 +523,14 @@ class MediaDiscoveryTest extends TestCase
 
         $this->assertDatabaseHas('media_articles', [
             'source_key' => 'test-maritime-feed',
-            'title' => 'SeaLead launches a new route',
+            'title' => 'Aquila Lines launches a new route',
         ]);
 
         $this->assertDatabaseHas('mentions', [
             'project_id' => $project->id,
             'tracked_keyword_id' => $keyword->id,
             'source' => 'media',
-            'title' => 'SeaLead launches a new route',
+            'title' => 'Aquila Lines launches a new route',
         ]);
     }
 
@@ -550,7 +550,7 @@ class MediaDiscoveryTest extends TestCase
         ]);
 
         $keyword = $project->trackedKeywords()->create([
-            'keyword' => 'SeaLead',
+            'keyword' => 'Aquila Lines',
             'platform' => 'media',
             'match_type' => 'phrase',
             'is_active' => true,
@@ -569,10 +569,10 @@ class MediaDiscoveryTest extends TestCase
                 'excerpt_only' => true,
             ],
             [
-                'url' => 'https://premium.example.test/articles/sealead-route',
+                'url' => 'https://premium.example.test/articles/aquila-lines-route',
                 'feed_url' => 'https://premium.example.test/rss.xml',
-                'title' => 'SeaLead expands premium coverage',
-                'body' => 'SeaLead premium feed excerpt for licensed monitoring only.',
+                'title' => 'Aquila Lines expands premium coverage',
+                'body' => 'Aquila Lines premium feed excerpt for licensed monitoring only.',
                 'author' => 'Premium Desk',
                 'published_at' => '2026-03-17T09:00:00Z',
             ],
@@ -584,8 +584,8 @@ class MediaDiscoveryTest extends TestCase
 
         $this->assertDatabaseHas('media_articles', [
             'source_key' => 'premium-feed',
-            'title' => 'SeaLead expands premium coverage',
-            'body' => 'SeaLead premium feed excerpt for licensed monitoring only.',
+            'title' => 'Aquila Lines expands premium coverage',
+            'body' => 'Aquila Lines premium feed excerpt for licensed monitoring only.',
             'author_name' => 'Premium Desk',
         ]);
 
@@ -593,8 +593,8 @@ class MediaDiscoveryTest extends TestCase
             'project_id' => $project->id,
             'tracked_keyword_id' => $keyword->id,
             'source' => 'media',
-            'title' => 'SeaLead expands premium coverage',
-            'body' => 'SeaLead premium feed excerpt for licensed monitoring only.',
+            'title' => 'Aquila Lines expands premium coverage',
+            'body' => 'Aquila Lines premium feed excerpt for licensed monitoring only.',
         ]);
     }
 

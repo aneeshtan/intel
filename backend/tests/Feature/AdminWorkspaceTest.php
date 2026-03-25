@@ -35,14 +35,14 @@ class AdminWorkspaceTest extends TestCase
         $member->attachRole($userRole);
 
         $project = $member->projects()->create([
-            'name' => 'SeaLead',
-            'slug' => 'sealead',
+            'name' => 'Aquila Lines',
+            'slug' => 'aquila-lines',
             'status' => 'active',
             'monitored_platforms' => ['media'],
         ]);
 
         $keyword = $project->trackedKeywords()->create([
-            'keyword' => 'SeaLead',
+            'keyword' => 'Aquila Lines',
             'platform' => 'media',
             'match_type' => 'phrase',
             'is_active' => true,
@@ -53,8 +53,8 @@ class AdminWorkspaceTest extends TestCase
             'tracked_keyword_id' => $keyword->id,
             'source' => 'media',
             'external_id' => 'mention-1',
-            'title' => 'SeaLead update',
-            'body' => 'SeaLead appears in a media article.',
+            'title' => 'Aquila Lines update',
+            'body' => 'Aquila Lines appears in a media article.',
             'sentiment' => 'neutral',
             'published_at' => now()->subHour(),
             'metadata' => [
@@ -72,10 +72,10 @@ class AdminWorkspaceTest extends TestCase
             ->assertJsonPath('data.summary.projects', 1)
             ->assertJsonPath('data.summary.keywords', 1)
             ->assertJsonPath('data.summary.mentions', 1)
-            ->assertJsonPath('data.projects.0.name', 'SeaLead')
+            ->assertJsonPath('data.projects.0.name', 'Aquila Lines')
             ->assertJsonPath('data.projects.0.user.email', 'member@example.test')
-            ->assertJsonPath('data.keywords.0.keyword', 'SeaLead')
-            ->assertJsonPath('data.keywords.0.project.name', 'SeaLead')
+            ->assertJsonPath('data.keywords.0.keyword', 'Aquila Lines')
+            ->assertJsonPath('data.keywords.0.project.name', 'Aquila Lines')
             ->assertJsonPath('data.keywords.0.user.email', 'member@example.test')
             ->assertJsonFragment([
                 'email' => 'member@example.test',

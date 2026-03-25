@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { apiRequest } from "@/lib/api-client";
 import {
@@ -68,6 +69,116 @@ const overviewStats = [
     label: "Decision makers reached",
     value: "82k",
     detail: "LinkedIn-heavy operator and port audience",
+  },
+];
+
+const anonymousCoverageValues = [
+  {
+    label: "Source inventory",
+    value: "Trade media, company newsrooms, Reddit, and X",
+    detail: "Coverage starts with curated maritime channels instead of generic web noise.",
+  },
+  {
+    label: "Refresh cadence",
+    value: "Checks every 30 minutes with archive indexing",
+    detail: "Fresh articles, archive context, and source health stay visible in the same system.",
+  },
+  {
+    label: "Normalization",
+    value: "One mention stream across mixed sources",
+    detail: "Tone, reach, timestamps, and keyword context are aligned for fast scanning.",
+  },
+  {
+    label: "Delivery",
+    value: "Projects, alerts, source views, and reports",
+    detail: "The index feeds real workflows instead of ending at raw article collection.",
+  },
+];
+
+const anonymousIntelligenceCards = [
+  {
+    title: "Narrative intelligence",
+    description:
+      "Group mentions around themes like port congestion, Red Sea rerouting, bunker economics, terminal disruption, and alliance strategy.",
+  },
+  {
+    title: "Competitive context",
+    description:
+      "Compare brand attention, source concentration, and tone across operators, ports, logistics brands, or customer accounts.",
+  },
+  {
+    title: "Executive-ready summaries",
+    description:
+      "Generate concise monitoring snapshots that explain what changed, why it matters, and what needs action next.",
+  },
+  {
+    title: "Source confidence",
+    description:
+      "Audit indexed sources, freshness, and archive health so teams know how much trust to place in the coverage.",
+  },
+];
+
+const anonymousReportCards = [
+  {
+    title: "Board and client updates",
+    description:
+      "Export clean PDF snapshots for leadership, customers, or commercial reviews without rewriting the story each time.",
+  },
+  {
+    title: "Operational daily briefings",
+    description:
+      "Use filtered mention streams and alert routing to create disciplined internal monitoring cadences.",
+  },
+  {
+    title: "Campaign and issue reviews",
+    description:
+      "Benchmark how a launch, incident, port disruption, or competitor move shifted attention across channels.",
+  },
+];
+
+const anonymousUseCases = [
+  {
+    title: "Ports and terminals",
+    description:
+      "Track congestion narratives, labor risk, infrastructure announcements, and reputation swings around service quality.",
+  },
+  {
+    title: "Carriers and operators",
+    description:
+      "Monitor routing changes, schedule reliability, service launches, alliance perception, and competitor comparison.",
+  },
+  {
+    title: "Logistics and forwarding teams",
+    description:
+      "Watch customer sentiment, market education themes, and earned-media momentum across key trade lanes.",
+  },
+  {
+    title: "Advisors and communications teams",
+    description:
+      "Separate watch items from decision-grade issues and turn scattered mentions into a coherent market narrative.",
+  },
+];
+
+const anonymousFaqItems = [
+  {
+    question: "What makes IQX different from a general social listening tool?",
+    answer:
+      "IQX is shaped around maritime intelligence workflows. It is designed to help ports, operators, logistics brands, and advisors understand why the market is moving, not just count mentions.",
+  },
+  {
+    question: "What sources does IQX focus on?",
+    answer:
+      "IQX is built around the channels that shape maritime perception: industry media, operator and port coverage, social discussion, and high-value market commentary.",
+  },
+  {
+    question: "Can IQX support competitor and issue monitoring?",
+    answer:
+      "Yes. Projects can be organized around competitors, incidents, trade routes, cargo themes, or risk topics so each monitoring brief stays separated and actionable.",
+  },
+  {
+    question: "Is IQX more for PR or for commercial and operations teams?",
+    answer:
+      "Both. The product is intentionally positioned between communications, market intelligence, commercial strategy, and operational awareness.",
   },
 ];
 
@@ -927,6 +1038,42 @@ function StatCard({
   );
 }
 
+function MarketingSectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="max-w-3xl">
+      <p className="text-sm tracking-[0.22em] text-stone-500 uppercase">{eyebrow}</p>
+      <h3 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-stone-950 sm:text-4xl">
+        {title}
+      </h3>
+      <p className="mt-4 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg sm:leading-8">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function CoverageFlowVisual() {
+  return (
+    <article className="overflow-hidden rounded-[2.2rem] border border-stone-200/80 bg-white shadow-[0_22px_70px_rgba(15,23,42,0.12)]">
+      <Image
+        src="/left-2.jpg"
+        alt="IQX homepage coverage visual"
+        width={1600}
+        height={1100}
+        className="block h-[420px] w-full object-cover sm:h-[520px] lg:h-[100%] lg:min-h-[640px]"
+      />
+    </article>
+  );
+}
+
 function ResultToneBadge({ tone }: { tone: string }) {
   const toneClassName =
     tone === "positive"
@@ -1736,6 +1883,11 @@ export function IqxIntelligenceApp() {
       setCapturedArticles(null);
       setAdminRefreshState(createAdminRefreshState());
     }
+
+    return {
+      projectId,
+      hasNoProjects: projectsResponse.data.length === 0,
+    };
   };
 
   useEffect(() => {
@@ -1769,12 +1921,17 @@ export function IqxIntelligenceApp() {
         }
 
         setToken(storedToken);
-        await hydrateSession(storedToken);
+        const sessionState = await hydrateSession(storedToken);
 
-        if (oauthResult?.token && typeof window !== "undefined") {
-          window.history.replaceState(null, "", "/");
-          setCurrentPathname("/");
-          setActiveWorkspaceTabState("results");
+        if (typeof window !== "undefined") {
+          const nextPathname = sessionState.hasNoProjects ? "/projects/new" : "/";
+          const nextTab = sessionState.hasNoProjects ? "new-project" : "results";
+
+          if (oauthResult?.token || currentPathname === "/login" || currentPathname === "/register") {
+            window.history.replaceState(null, "", nextPathname);
+            setCurrentPathname(nextPathname);
+            setActiveWorkspaceTabState(nextTab);
+          }
         }
       } catch (error) {
         clearSession();
@@ -1907,8 +2064,8 @@ export function IqxIntelligenceApp() {
           password: "",
           passwordConfirmation: "",
         });
-        await hydrateSession(response.token);
-        setActiveWorkspaceTab("results");
+        const sessionState = await hydrateSession(response.token);
+        setActiveWorkspaceTab(sessionState.hasNoProjects ? "new-project" : "results");
       } catch (error) {
         setBootError(error instanceof Error ? error.message : "Authentication failed.");
       }
@@ -3224,6 +3381,10 @@ export function IqxIntelligenceApp() {
   ].filter((tab): tab is { key: WorkspaceTab; label: string } => Boolean(tab));
   const anonymousNavItems = [
     { key: "overview", label: "Overview", href: "#overview" },
+    { key: "coverage", label: "Coverage", href: "#coverage" },
+    { key: "intelligence", label: "Intelligence", href: "#intelligence" },
+    { key: "reports", label: "Reports", href: "#reports" },
+    { key: "faq", label: "FAQ", href: "#faq" },
     { key: "access", label: "Access", href: "#access" },
   ];
   const activeTabCopy: Record<
@@ -3525,6 +3686,170 @@ export function IqxIntelligenceApp() {
               </div>
             </aside>
           </div>
+
+          <section
+            id="coverage"
+            className="mt-6 grid gap-6 scroll-mt-28 lg:grid-cols-[0.92fr_1.08fr] lg:items-stretch"
+          >
+            <CoverageFlowVisual />
+
+            <article className="rounded-[2.2rem] border border-white/40 bg-white/70 p-7 shadow-[0_22px_70px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:p-8">
+              <p className="text-sm tracking-[0.22em] text-stone-500 uppercase">Coverage</p>
+              <h3 className="mt-4 max-w-xl text-3xl font-semibold tracking-[-0.06em] text-stone-950 sm:text-5xl sm:leading-[1.02]">
+                Coverage built for maritime monitoring.
+              </h3>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg sm:leading-8">
+                IQX keeps the section simple: one photo, one headline, and the operational values
+                that explain how coverage actually works.
+              </p>
+
+              <div className="mt-8 space-y-4">
+                {anonymousCoverageValues.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-[1.6rem] border border-stone-200/80 bg-white/88 px-5 py-5"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                      {item.label}
+                    </p>
+                    <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-stone-950 sm:text-2xl">
+                      {item.value}
+                    </h4>
+                    <p className="mt-2 text-sm leading-7 text-stone-600">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section id="intelligence" className="mt-16 scroll-mt-28">
+            <MarketingSectionHeading
+              eyebrow="Maritime intelligence"
+              title="Move from mention monitoring to market interpretation"
+              description="IQX should feel less like a generic listening dashboard and more like an operating picture for maritime reputation, risk, and competitive context."
+            />
+
+            <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {anonymousIntelligenceCards.map((item) => (
+                <article
+                  key={item.title}
+                  className="rounded-[2rem] border border-white/20 bg-white/40 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl"
+                >
+                  <h4 className="text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                    {item.title}
+                  </h4>
+                  <p className="mt-3 text-sm leading-6 text-stone-600">
+                    {item.description}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section id="reports" className="mt-16 grid gap-5 scroll-mt-28 lg:grid-cols-[1fr_0.95fr]">
+            <article className="rounded-[2rem] border border-white/20 bg-stone-950 p-6 text-stone-50 shadow-[0_20px_60px_rgba(0,0,0,0.18)] sm:p-7">
+              <p className="text-sm tracking-[0.2em] text-stone-300 uppercase">Reporting and comparison</p>
+              <h3 className="mt-3 text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">
+                Give leadership a cleaner answer than “here are the mentions”
+              </h3>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-stone-300">
+                Public category leaders explain reporting, comparisons, and AI insights clearly.
+                IQX should do the same for ports, carriers, logistics groups, and advisory teams.
+              </p>
+
+              <div className="mt-8 grid gap-4 md:grid-cols-3">
+                {anonymousReportCards.map((item) => (
+                  <div
+                    key={item.title}
+                    className="rounded-[1.5rem] border border-white/10 bg-white/5 p-4"
+                  >
+                    <h4 className="text-lg font-semibold tracking-[-0.03em] text-white">
+                      {item.title}
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-stone-300">
+                      {item.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="rounded-[2rem] border border-white/20 bg-white/40 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl sm:p-7">
+              <p className="text-sm tracking-[0.2em] text-stone-500 uppercase">Built for real briefs</p>
+              <div className="mt-5 space-y-4">
+                {anonymousUseCases.map((item) => (
+                  <div
+                    key={item.title}
+                    className="rounded-[1.5rem] border border-stone-200 bg-stone-50/80 p-4"
+                  >
+                    <h4 className="text-lg font-semibold tracking-[-0.03em] text-stone-950">
+                      {item.title}
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-stone-600">
+                      {item.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section id="faq" className="mt-16 scroll-mt-28">
+            <MarketingSectionHeading
+              eyebrow="Frequently asked"
+              title="What teams want to know before they start monitoring"
+              description="The public homepage should answer the core product questions up front so visitors understand where IQX fits before they create an account."
+            />
+
+            <div className="mt-8 grid gap-4 lg:grid-cols-2">
+              {anonymousFaqItems.map((item) => (
+                <article
+                  key={item.question}
+                  className="rounded-[2rem] border border-white/20 bg-white/40 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl"
+                >
+                  <h4 className="text-xl font-semibold tracking-[-0.04em] text-stone-950">
+                    {item.question}
+                  </h4>
+                  <p className="mt-3 text-sm leading-6 text-stone-600">
+                    {item.answer}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-16 scroll-mt-28">
+            <article className="rounded-[2.4rem] border border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(245,245,244,0.92))] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur-xl sm:p-8">
+              <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+                <div>
+                  <p className="text-sm tracking-[0.22em] text-stone-500 uppercase">Start with a sharper market brief</p>
+                  <h3 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-stone-950 sm:text-4xl">
+                    Create an IQX workspace for the narratives your maritime team actually needs to track.
+                  </h3>
+                  <p className="mt-4 max-w-2xl text-base leading-7 text-stone-600">
+                    Launch a project around a competitor, route, issue, port, customer segment, or operational risk theme and turn scattered signals into one decision-ready view.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                  <button
+                    type="button"
+                    onClick={() => setAuthRouteMode("register")}
+                    className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5"
+                  >
+                    Create IQX workspace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGoogleAuth}
+                    className="rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-semibold text-stone-800 transition-transform hover:-translate-y-0.5"
+                  >
+                    Continue with Google
+                  </button>
+                </div>
+              </div>
+            </article>
+          </section>
         </section>
       ) : null}
 
@@ -6628,7 +6953,7 @@ export function IqxIntelligenceApp() {
                             keywords: event.target.value,
                           }))
                         }
-                        placeholder="SeaLead, Red Sea disruption, container rates"
+                        placeholder="Aquila Lines, Red Sea disruption, container rates"
                       />
                       <span className="mt-2 block text-sm font-normal text-stone-500">
                         Type comma-separated phrases to monitor. The first one becomes the project name.
@@ -6922,11 +7247,7 @@ export function IqxIntelligenceApp() {
               ) : null}
             </section>
           </div>
-        ) : (
-          <div className="rounded-[2.4rem] border border-white/20 bg-white/80 p-7 text-sm text-stone-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-            Sign in or register to access projects, tracked keywords, and result streams.
-          </div>
-        )}
+        ) : null}
       </section>
     </main>
   );

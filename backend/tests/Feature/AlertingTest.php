@@ -96,8 +96,8 @@ class AlertingTest extends TestCase
             'external_id' => sha1('instant-alert-1'),
             'author_name' => 'Ops Desk',
             'url' => 'https://example.test/articles/1',
-            'title' => 'SeaLead expands fresh service',
-            'body' => 'SeaLead announced a new service this afternoon.',
+            'title' => 'Aquila Lines expands fresh service',
+            'body' => 'Aquila Lines announced a new service this afternoon.',
             'sentiment' => 'neutral',
             'published_at' => now()->subMinutes(15),
             'metadata' => [
@@ -192,7 +192,7 @@ class AlertingTest extends TestCase
 
         if (func_num_args() > 1) {
             $keyword = $project->trackedKeywords()->create([
-                'keyword' => 'SeaLead',
+                'keyword' => 'Aquila Lines',
                 'platform' => 'all',
                 'match_type' => 'phrase',
                 'is_active' => true,
