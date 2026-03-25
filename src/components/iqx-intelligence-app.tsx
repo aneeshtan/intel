@@ -183,24 +183,24 @@ const anonymousFaqItems = [
 ];
 
 const anonymousAuthoritySources = [
-  { glyph: "LL", name: "Lloyd's List", type: "Industry news" },
-  { glyph: "TW", name: "TradeWinds", type: "Shipping news" },
-  { glyph: "JOC", name: "JOC", type: "Logistics media" },
-  { glyph: "SL", name: "Splash247", type: "Daily shipping" },
-  { glyph: "TL", name: "The Loadstar", type: "Supply chain" },
-  { glyph: "SM", name: "Seatrade Maritime", type: "Maritime media" },
-  { glyph: "HSN", name: "Hellenic Shipping News", type: "Trade press" },
-  { glyph: "ME", name: "The Maritime Executive", type: "Maritime analysis" },
-  { glyph: "GC", name: "gCaptain", type: "Maritime commentary" },
-  { glyph: "PTI", name: "Port Technology", type: "Port intelligence" },
-  { glyph: "OE", name: "Offshore Energy", type: "Energy transition" },
-  { glyph: "WCN", name: "World Cargo News", type: "Cargo and ports" },
-  { glyph: "RMM", name: "Riviera", type: "Maritime reporting" },
-  { glyph: "S4S", name: "SAFETY4SEA", type: "Compliance and safety" },
-  { glyph: "BIM", name: "BIMCO News", type: "Institutional" },
-  { glyph: "IMO", name: "IMO Media Centre", type: "Regulatory" },
-  { glyph: "DNV", name: "DNV Maritime", type: "Classification" },
-  { glyph: "P&H", name: "Ports & Harbors", type: "Port media" },
+  { logo: "/source-logos/lloydslist.png", name: "Lloyd's List", type: "Industry news" },
+  { logo: "/source-logos/tradewinds.png", name: "TradeWinds", type: "Shipping news" },
+  { logo: "/source-logos/joc.jpg", name: "JOC", type: "Logistics media" },
+  { logo: "/source-logos/splash247.png", name: "Splash247", type: "Daily shipping" },
+  { logo: "/source-logos/theloadstar.png", name: "The Loadstar", type: "Supply chain" },
+  { logo: "/source-logos/seatrade-maritime.jpg", name: "Seatrade Maritime", type: "Maritime media" },
+  { logo: "/source-logos/hellenicshippingnews.png", name: "Hellenic Shipping News", type: "Trade press" },
+  { logo: "/source-logos/maritime-executive.png", name: "The Maritime Executive", type: "Maritime analysis" },
+  { logo: "/source-logos/gcaptain.jpg", name: "gCaptain", type: "Maritime commentary" },
+  { logo: "/source-logos/porttechnology.png", name: "Port Technology", type: "Port intelligence" },
+  { logo: "/source-logos/offshore-energy.png", name: "Offshore Energy", type: "Energy transition" },
+  { logo: "/source-logos/worldcargonews.png", name: "World Cargo News", type: "Cargo and ports" },
+  { logo: "/source-logos/riviera.png", name: "Riviera", type: "Maritime reporting" },
+  { logo: "/source-logos/safety4sea.png", name: "SAFETY4SEA", type: "Compliance and safety" },
+  { logo: "/source-logos/bimco.png", name: "BIMCO News", type: "Institutional" },
+  { logo: "/source-logos/imo.png", name: "IMO Media Centre", type: "Regulatory" },
+  { logo: "/source-logos/dnv.png", name: "DNV Maritime", type: "Classification" },
+  { logo: "/source-logos/portsandharbors.png", name: "Ports & Harbors", type: "Port media" },
 ];
 
 type AuthMode = "login" | "register";
@@ -4070,8 +4070,14 @@ export function IqxIntelligenceApp() {
                     key={source.name}
                     className="rounded-[1.6rem] border border-white/8 bg-white/[0.03] px-4 py-5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                   >
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm font-semibold tracking-[0.16em] text-white">
-                      {source.glyph}
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white px-2 shadow-[0_8px_24px_rgba(15,23,42,0.24)]">
+                      <Image
+                        src={source.logo}
+                        alt={`${source.name} logo`}
+                        width={36}
+                        height={36}
+                        className="h-9 w-9 object-contain"
+                      />
                     </div>
                     <p className="mt-4 text-[15px] font-semibold tracking-[-0.03em] text-white">
                       {source.name}
@@ -4653,7 +4659,18 @@ export function IqxIntelligenceApp() {
                             </div>
 
                             <h4 className="mt-3 text-lg font-semibold tracking-[-0.03em] text-stone-900">
-                              {mention.title ?? "Untitled result"}
+                              {mention.url ? (
+                                <a
+                                  href={mention.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="transition-colors hover:text-blue-700 hover:underline"
+                                >
+                                  {mention.title ?? "Untitled result"}
+                                </a>
+                              ) : (
+                                mention.title ?? "Untitled result"
+                              )}
                             </h4>
                             <MentionExcerpt
                               body={mention.body}
@@ -5542,7 +5559,18 @@ export function IqxIntelligenceApp() {
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <strong className="text-base font-semibold text-stone-950">
-                                    {mention.title ?? "Untitled mention"}
+                                    {mention.url ? (
+                                      <a
+                                        href={mention.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="transition-colors hover:text-blue-700 hover:underline"
+                                      >
+                                        {mention.title ?? "Untitled mention"}
+                                      </a>
+                                    ) : (
+                                      mention.title ?? "Untitled mention"
+                                    )}
                                   </strong>
                                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
                                     <span>{mention.metadata?.source_name ?? mention.source}</span>
