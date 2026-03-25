@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { Fragment, type ReactNode, useEffect, useState, useTransition } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -180,6 +180,27 @@ const anonymousFaqItems = [
     answer:
       "Both. The product is intentionally positioned between communications, market intelligence, commercial strategy, and operational awareness.",
   },
+];
+
+const anonymousAuthoritySources = [
+  { glyph: "LL", name: "Lloyd's List", type: "Industry news" },
+  { glyph: "TW", name: "TradeWinds", type: "Shipping news" },
+  { glyph: "JOC", name: "JOC", type: "Logistics media" },
+  { glyph: "SL", name: "Splash247", type: "Daily shipping" },
+  { glyph: "TL", name: "The Loadstar", type: "Supply chain" },
+  { glyph: "SM", name: "Seatrade Maritime", type: "Maritime media" },
+  { glyph: "HSN", name: "Hellenic Shipping News", type: "Trade press" },
+  { glyph: "ME", name: "The Maritime Executive", type: "Maritime analysis" },
+  { glyph: "GC", name: "gCaptain", type: "Maritime commentary" },
+  { glyph: "PTI", name: "Port Technology", type: "Port intelligence" },
+  { glyph: "OE", name: "Offshore Energy", type: "Energy transition" },
+  { glyph: "WCN", name: "World Cargo News", type: "Cargo and ports" },
+  { glyph: "RMM", name: "Riviera", type: "Maritime reporting" },
+  { glyph: "S4S", name: "SAFETY4SEA", type: "Compliance and safety" },
+  { glyph: "BIM", name: "BIMCO News", type: "Institutional" },
+  { glyph: "IMO", name: "IMO Media Centre", type: "Regulatory" },
+  { glyph: "DNV", name: "DNV Maritime", type: "Classification" },
+  { glyph: "P&H", name: "Ports & Harbors", type: "Port media" },
 ];
 
 type AuthMode = "login" | "register";
@@ -698,6 +719,119 @@ function buildProjectNameFromKeywords(keywords: string[]) {
   return firstKeyword.length > 70 ? `${firstKeyword.slice(0, 67).trim()}...` : firstKeyword;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeExcerptBody(body: string) {
+  return body.replace(/\s+/g, " ").trim();
+}
+
+function buildMentionExcerpt(body: string, keyword?: string | null, maxLength = 360) {
+  const normalizedBody = normalizeExcerptBody(body);
+
+  if (normalizedBody.length <= maxLength) {
+    return {
+      excerpt: normalizedBody,
+      hasLeadingTruncation: false,
+      hasTrailingTruncation: false,
+    };
+  }
+
+  const normalizedKeyword = keyword?.trim() ?? "";
+  const keywordIndex = normalizedKeyword
+    ? normalizedBody.toLowerCase().indexOf(normalizedKeyword.toLowerCase())
+    : -1;
+
+  if (keywordIndex === -1) {
+    return {
+      excerpt: normalizedBody.slice(0, maxLength).trimEnd(),
+      hasLeadingTruncation: false,
+      hasTrailingTruncation: true,
+    };
+  }
+
+  const keywordLength = normalizedKeyword.length;
+  let start = Math.max(0, keywordIndex - Math.floor((maxLength - keywordLength) / 2));
+  let end = Math.min(normalizedBody.length, start + maxLength);
+
+  if (end - start < maxLength) {
+    start = Math.max(0, end - maxLength);
+  }
+
+  if (start > 0) {
+    const nextWhitespaceIndex = normalizedBody.indexOf(" ", start);
+    if (nextWhitespaceIndex !== -1 && nextWhitespaceIndex - start < 20) {
+      start = nextWhitespaceIndex + 1;
+    }
+  }
+
+  if (end < normalizedBody.length) {
+    const previousWhitespaceIndex = normalizedBody.lastIndexOf(" ", end);
+    if (previousWhitespaceIndex !== -1 && end - previousWhitespaceIndex < 20) {
+      end = previousWhitespaceIndex;
+    }
+  }
+
+  return {
+    excerpt: normalizedBody.slice(start, end).trim(),
+    hasLeadingTruncation: start > 0,
+    hasTrailingTruncation: end < normalizedBody.length,
+  };
+}
+
+function renderHighlightedText(text: string, keyword?: string | null): ReactNode {
+  const normalizedKeyword = keyword?.trim() ?? "";
+
+  if (!normalizedKeyword) {
+    return text;
+  }
+
+  const pattern = new RegExp(`(${escapeRegExp(normalizedKeyword)})`, "ig");
+  const parts = text.split(pattern);
+
+  return parts.map((part, index) => {
+    if (part.toLowerCase() !== normalizedKeyword.toLowerCase()) {
+      return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
+    }
+
+    return (
+      <mark
+        key={`${part}-${index}`}
+        className="rounded bg-amber-200/80 px-1 font-bold text-stone-900"
+      >
+        {part}
+      </mark>
+    );
+  });
+}
+
+function MentionExcerpt({
+  body,
+  keyword,
+  className,
+  maxLength = 360,
+}: {
+  body: string;
+  keyword?: string | null;
+  className?: string;
+  maxLength?: number;
+}) {
+  const { excerpt, hasLeadingTruncation, hasTrailingTruncation } = buildMentionExcerpt(
+    body,
+    keyword,
+    maxLength,
+  );
+
+  return (
+    <p className={className}>
+      {hasLeadingTruncation ? "..." : null}
+      {renderHighlightedText(excerpt, keyword)}
+      {hasTrailingTruncation ? " [...]" : null}
+    </p>
+  );
+}
+
 function mentionSentimentSelection(mention: Mention) {
   return mention.metadata?.sentiment_source === "manual" ? mention.sentiment : "auto";
 }
@@ -971,7 +1105,14 @@ function buildDonutGradient(items: { count: number; color: string }[]) {
     .join(", ")})`;
 }
 
-function buildLinePath(values: number[], width: number, height: number, scaleMax?: number) {
+function buildLinePath(
+  values: number[],
+  width: number,
+  height: number,
+  scaleMax?: number,
+  offsetX = 0,
+  offsetY = 0,
+) {
   if (!values.length) {
     return "";
   }
@@ -980,12 +1121,55 @@ function buildLinePath(values: number[], width: number, height: number, scaleMax
 
   return values
     .map((value, index) => {
-      const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
-      const y = height - (value / max) * height;
+      const x =
+        (values.length === 1 ? width / 2 : (index / (values.length - 1)) * width) + offsetX;
+      const y = height - (value / max) * height + offsetY;
 
       return `${index === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
+}
+
+function buildSmoothLinePath(
+  values: number[],
+  width: number,
+  height: number,
+  scaleMax?: number,
+  offsetX = 0,
+  offsetY = 0,
+) {
+  if (!values.length) {
+    return "";
+  }
+
+  const uniqueValues = new Set(values);
+
+  if (values.length === 1 || uniqueValues.size <= 1) {
+    return buildLinePath(values, width, height, scaleMax, offsetX, offsetY);
+  }
+
+  const max = Math.max(scaleMax ?? Math.max(...values, 1), 1);
+  const points = values.map((value, index) => ({
+    x: (values.length === 1 ? width / 2 : (index / (values.length - 1)) * width) + offsetX,
+    y: height - (value / max) * height + offsetY,
+  }));
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const previous = points[index - 1] ?? current;
+    const afterNext = points[index + 2] ?? next;
+    const controlPoint1X = current.x + (next.x - previous.x) / 6;
+    const controlPoint1Y = current.y + (next.y - previous.y) / 6;
+    const controlPoint2X = next.x - (afterNext.x - current.x) / 6;
+    const controlPoint2Y = next.y - (afterNext.y - current.y) / 6;
+
+    path += ` C ${controlPoint1X} ${controlPoint1Y}, ${controlPoint2X} ${controlPoint2Y}, ${next.x} ${next.y}`;
+  }
+
+  return path;
 }
 
 function buildAxisSteps(maxValue: number, steps = 4) {
@@ -1330,12 +1514,12 @@ function MentionReachChart({
   const series = buildMentionReachSeries(mentions, windowDays);
   const mentionValues = series.map((point) => point.mentions);
   const reachValues = series.map((point) => point.reach);
-  const width = 760;
-  const height = 260;
-  const plotLeft = 52;
-  const plotRight = 56;
-  const plotTop = 18;
-  const plotBottom = 36;
+  const width = 1180;
+  const height = 360;
+  const plotLeft = 78;
+  const plotRight = 84;
+  const plotTop = 28;
+  const plotBottom = 58;
   const plotWidth = width - plotLeft - plotRight;
   const plotHeight = height - plotTop - plotBottom;
   const maxMentions = Math.max(...mentionValues, 1);
@@ -1350,43 +1534,42 @@ function MentionReachChart({
     series.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + (index / (series.length - 1)) * plotWidth;
   const yForMentions = (value: number) => plotTop + plotHeight - (value / mentionScaleMax) * plotHeight;
   const yForReach = (value: number) => plotTop + plotHeight - (value / reachScaleMax) * plotHeight;
-  const mentionPath = buildLinePath(
+  const mentionPath = buildSmoothLinePath(
     mentionValues,
     plotWidth,
     plotHeight,
     mentionScaleMax,
-  )
-    .replaceAll(/([ML]) ([^ ]+) ([^ ]+)/g, (_, command, x, y) => {
-      return `${command} ${Number(x) + plotLeft} ${Number(y) + plotTop}`;
-    });
-  const reachPath = buildLinePath(
+    plotLeft,
+    plotTop,
+  );
+  const reachPath = buildSmoothLinePath(
     reachValues,
     plotWidth,
     plotHeight,
     reachScaleMax,
-  )
-    .replaceAll(/([ML]) ([^ ]+) ([^ ]+)/g, (_, command, x, y) => {
-      return `${command} ${Number(x) + plotLeft} ${Number(y) + plotTop}`;
-    });
+    plotLeft,
+    plotTop,
+  );
 
   return (
-    <article className="rounded-[1.6rem] border border-stone-200 bg-stone-50/90 p-5">
+    <article className="rounded-[1.7rem] border border-stone-200 bg-stone-50/90 p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-[0.9rem] bg-white px-4 py-2 text-sm font-semibold text-stone-950">
+          <span className="rounded-[1rem] border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-950 shadow-sm">
             Mentions & Reach
           </span>
-          <span className="rounded-[0.9rem] border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-500">
+          <span className="rounded-[1rem] border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-500 shadow-sm">
             Sentiment
           </span>
         </div>
-        <p className="text-sm text-stone-500">{label}</p>
+        <p className="text-sm font-medium text-stone-500">{label}</p>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-[1.25rem] border border-stone-200 bg-white p-4">
+      <div className="mt-5 overflow-hidden rounded-[1.4rem] border border-stone-200 bg-white px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] sm:px-5 sm:py-5">
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="h-64 w-full"
+          className="h-[20rem] w-full sm:h-[23rem]"
+          preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label="Mentions and reach chart"
         >
@@ -1400,15 +1583,16 @@ function MentionReachChart({
                   y1={y}
                   x2={width - plotRight}
                   y2={y}
-                  stroke="rgba(231,229,228,1)"
+                  stroke="rgba(231,229,228,0.95)"
                   strokeWidth="1"
                 />
                 <text
-                  x={plotLeft - 10}
-                  y={y + 4}
+                  x={plotLeft - 16}
+                  y={y + 5}
                   textAnchor="end"
-                  fontSize="11"
-                  fill="#78716c"
+                  fontSize="13"
+                  fontWeight="600"
+                  fill="#57534e"
                 >
                   {step}
                 </text>
@@ -1422,10 +1606,11 @@ function MentionReachChart({
             return (
               <text
                 key={`reach-${step}`}
-                x={width - plotRight + 10}
-                y={y + 4}
-                fontSize="11"
-                fill="#78716c"
+                x={width - plotRight + 16}
+                y={y + 5}
+                fontSize="13"
+                fontWeight="600"
+                fill="#57534e"
               >
                 {formatCompactNumber(step)}
               </text>
@@ -1450,10 +1635,11 @@ function MentionReachChart({
                     />
                     <text
                       x={x}
-                      y={height - 8}
+                      y={height - 16}
                       textAnchor="middle"
-                      fontSize="11"
-                      fill="#78716c"
+                      fontSize="13"
+                      fontWeight="500"
+                      fill="#6b7280"
                     >
                       {point.label}
                     </text>
@@ -1467,7 +1653,7 @@ function MentionReachChart({
             d={mentionPath}
             fill="none"
             stroke="#2563eb"
-            strokeWidth="3.5"
+            strokeWidth="4.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -1475,7 +1661,7 @@ function MentionReachChart({
             d={reachPath}
             fill="none"
             stroke="#15803d"
-            strokeWidth="3"
+            strokeWidth="4"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -1486,17 +1672,28 @@ function MentionReachChart({
 
             return (
               <g key={`mention-point-${point.key}`}>
-                <circle cx={x} cy={y} r="4.5" fill="#2563eb" />
+                <circle cx={x} cy={y} r="6" fill="#2563eb" stroke="#ffffff" strokeWidth="2.5" />
                 {showPointLabels && point.mentions > 0 ? (
-                  <text
-                    x={x}
-                    y={Math.max(plotTop + 12, y - 10)}
-                    textAnchor="middle"
-                    fontSize="10"
-                    fill="#1d4ed8"
-                  >
-                    {point.mentions}
-                  </text>
+                  <g>
+                    <rect
+                      x={x - 14}
+                      y={Math.max(plotTop + 6, y - 30)}
+                      width="28"
+                      height="18"
+                      rx="9"
+                      fill="#dbeafe"
+                    />
+                    <text
+                      x={x}
+                      y={Math.max(plotTop + 18, y - 17)}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fontWeight="700"
+                      fill="#1d4ed8"
+                    >
+                      {point.mentions}
+                    </text>
+                  </g>
                 ) : null}
               </g>
             );
@@ -1508,29 +1705,40 @@ function MentionReachChart({
 
             return (
               <g key={`reach-point-${point.key}`}>
-                <circle cx={x} cy={y} r="4.5" fill="#15803d" />
+                <circle cx={x} cy={y} r="6" fill="#15803d" stroke="#ffffff" strokeWidth="2.5" />
                 {showPointLabels && point.reach > 0 ? (
-                  <text
-                    x={x}
-                    y={Math.max(plotTop + 12, y - 10)}
-                    textAnchor="middle"
-                    fontSize="10"
-                    fill="#166534"
-                  >
-                    {formatCompactNumber(point.reach)}
-                  </text>
+                  <g>
+                    <rect
+                      x={x - 20}
+                      y={Math.max(plotTop + 28, y - 6)}
+                      width="40"
+                      height="18"
+                      rx="9"
+                      fill="#dcfce7"
+                    />
+                    <text
+                      x={x}
+                      y={Math.max(plotTop + 40, y + 7)}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fontWeight="700"
+                      fill="#166534"
+                    >
+                      {formatCompactNumber(point.reach)}
+                    </text>
+                  </g>
                 ) : null}
               </g>
             );
           })}
         </svg>
 
-        <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold">
-          <span className="flex items-center gap-2 text-blue-600">
+        <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+          <span className="flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">
             <span className="h-0.5 w-6 rounded-full bg-blue-600" />
             Mentions count
           </span>
-          <span className="flex items-center gap-2 text-green-700">
+          <span className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-green-700">
             <span className="h-0.5 w-6 rounded-full bg-green-700" />
             Estimated reach
           </span>
@@ -2025,6 +2233,22 @@ export function IqxIntelligenceApp() {
       }
     }
   }, [currentPathname, profile, routeWorkspaceTab]);
+
+  useEffect(() => {
+    const activeProjectHasMentions = (selectedProject?.mentions?.length ?? 0) > 0;
+
+    if (
+      !activeProjectHasMentions &&
+      (activeWorkspaceTab === "analysis" || activeWorkspaceTab === "sources")
+    ) {
+      setActiveWorkspaceTabState("results");
+
+      if (typeof window !== "undefined" && currentPathname !== "/") {
+        window.history.replaceState(null, "", "/");
+        setCurrentPathname("/");
+      }
+    }
+  }, [activeWorkspaceTab, currentPathname, selectedProject]);
 
   const handleAuthSubmit = () => {
     startTransition(async () => {
@@ -3202,6 +3426,7 @@ export function IqxIntelligenceApp() {
     selectedProject ?? projects.find((project) => project.id === selectedProjectId) ?? null;
   const trackedKeywords = selectedProject?.tracked_keywords ?? [];
   const mentions = selectedProject?.mentions ?? [];
+  const hasProjectMentions = mentions.length > 0;
   const analysisMentions = filterMentionsByWindow(mentions, analysisWindowDays);
   const sourceGroups = selectedProject?.source_groups ?? [];
   const influencerGroups = selectedProject?.influencer_groups ?? [];
@@ -3356,14 +3581,19 @@ export function IqxIntelligenceApp() {
     profileForm.email.trim() !== (profile?.email ?? "") ||
     profileForm.password.trim() !== "" ||
     profileForm.passwordConfirmation.trim() !== "";
+  const showInsightTabs = hasProjectMentions;
   const workspaceTabs: { key: WorkspaceTab; label: string }[] = [
     { key: "results", label: "Mentions" },
     {
       key: "alerts",
       label: `Alerts${profile?.counts.unread_alerts ? ` (${profile.counts.unread_alerts})` : ""}`,
     },
-    { key: "analysis", label: "Analytics" },
-    { key: "sources", label: "Influencers & Sources" },
+    ...(showInsightTabs
+      ? ([
+        { key: "analysis", label: "Analytics" },
+        { key: "sources", label: "Influencers & Sources" },
+      ] as Array<{ key: WorkspaceTab; label: string }>)
+      : []),
     ...(isAdmin ? [{ key: "articles" as WorkspaceTab, label: "Admin Center" }] : []),
     { key: "profile", label: "Profile" },
     { key: "keywords", label: "Keywords" },
@@ -3819,34 +4049,36 @@ export function IqxIntelligenceApp() {
           </section>
 
           <section className="mt-16 scroll-mt-28">
-            <article className="rounded-[2.4rem] border border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(245,245,244,0.92))] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur-xl sm:p-8">
-              <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-                <div>
-                  <p className="text-sm tracking-[0.22em] text-stone-500 uppercase">Start with a sharper market brief</p>
-                  <h3 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-stone-950 sm:text-4xl">
-                    Create an IQX workspace for the narratives your maritime team actually needs to track.
-                  </h3>
-                  <p className="mt-4 max-w-2xl text-base leading-7 text-stone-600">
-                    Launch a project around a competitor, route, issue, port, customer segment, or operational risk theme and turn scattered signals into one decision-ready view.
-                  </p>
-                </div>
+            <article className="rounded-[2.4rem] border border-slate-800/60 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_28%),linear-gradient(180deg,#1f2429,#14181b)] p-6 text-white shadow-[0_26px_80px_rgba(15,23,42,0.2)] sm:p-8">
+              <div className="mx-auto max-w-4xl text-center">
+                <p className="text-sm tracking-[0.22em] text-white/55 uppercase">
+                  Trusted source inventory
+                </p>
+                <h3 className="mt-4 text-3xl font-semibold tracking-[-0.06em] text-white sm:text-5xl sm:leading-[1.02]">
+                  Monitor the high-authority maritime outlets that move the market.
+                </h3>
+                <p className="mt-5 text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">
+                  IQX is built around recognized shipping, ports, logistics, and institutional
+                  sources so your monitoring brief starts with credible coverage, not generic web
+                  noise.
+                </p>
+              </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
-                  <button
-                    type="button"
-                    onClick={() => setAuthRouteMode("register")}
-                    className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-stone-50 transition-transform hover:-translate-y-0.5"
+              <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                {anonymousAuthoritySources.map((source) => (
+                  <article
+                    key={source.name}
+                    className="rounded-[1.6rem] border border-white/8 bg-white/[0.03] px-4 py-5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                   >
-                    Create IQX workspace
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleGoogleAuth}
-                    className="rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-semibold text-stone-800 transition-transform hover:-translate-y-0.5"
-                  >
-                    Continue with Google
-                  </button>
-                </div>
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm font-semibold tracking-[0.16em] text-white">
+                      {source.glyph}
+                    </div>
+                    <p className="mt-4 text-[15px] font-semibold tracking-[-0.03em] text-white">
+                      {source.name}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">{source.type}</p>
+                  </article>
+                ))}
               </div>
             </article>
           </section>
@@ -4326,56 +4558,57 @@ export function IqxIntelligenceApp() {
 
               {activeWorkspaceTab === "results" ? (
                 <div className="grid gap-5">
-                  <article
-                    id="results"
-                    className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-5"
-                  >
-                    <MentionReachChart mentions={filteredMentions} />
+                  {hasProjectMentions ? (
+                    <article
+                      id="results"
+                      className="rounded-[2rem] border border-white/20 bg-white/40 backdrop-blur-xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-5"
+                    >
+                      <MentionReachChart mentions={filteredMentions} />
 
-                    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-                      <div>
-                        <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
-                          Recent results
-                        </p>
-                        <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                          Matched mentions and recent coverage
-                        </h3>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold text-stone-500">
-                          {filteredMentions.length} results
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleExportPdfReport()}
-                          className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
-                        >
-                          Export PDF
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-                      <label className="text-sm font-medium text-stone-700">
-                        Search mentions, authors and sources
-                        <input
-                          className={inputClassName}
-                          value={mentionsQuery}
-                          onChange={(event) => setMentionsQuery(event.target.value)}
-                          placeholder="Search through mentions, authors and domains..."
-                        />
-                      </label>
-
-                      <div className="flex items-end">
-                        <div className="rounded-[1rem] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-500">
-                          Recent first
+                      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+                        <div>
+                          <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
+                            Recent results
+                          </p>
+                          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+                            Matched mentions and recent coverage
+                          </h3>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold text-stone-500">
+                            {filteredMentions.length} results
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleExportPdfReport()}
+                            className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-500"
+                          >
+                            Export PDF
+                          </button>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="mt-5 space-y-3">
-                      {filteredMentions.length ? (
-                        paginatedMentions.map((mention) => (
+                      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <label className="text-sm font-medium text-stone-700">
+                          Search mentions, authors and sources
+                          <input
+                            className={inputClassName}
+                            value={mentionsQuery}
+                            onChange={(event) => setMentionsQuery(event.target.value)}
+                            placeholder="Search through mentions, authors and domains..."
+                          />
+                        </label>
+
+                        <div className="flex items-end">
+                          <div className="rounded-[1rem] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-500">
+                            Recent first
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 space-y-3">
+                        {filteredMentions.length ? (
+                          paginatedMentions.map((mention) => (
                           <article
                             key={mention.id}
                             className="rounded-[1.2rem] border border-stone-200 bg-stone-50/90 p-5"
@@ -4422,12 +4655,19 @@ export function IqxIntelligenceApp() {
                             <h4 className="mt-3 text-lg font-semibold tracking-[-0.03em] text-stone-900">
                               {mention.title ?? "Untitled result"}
                             </h4>
-                            <p className="mt-2 text-sm leading-6 text-stone-500">
-                              {mention.body}
-                            </p>
+                            <MentionExcerpt
+                              body={mention.body}
+                              keyword={mention.tracked_keyword?.keyword}
+                              className="mt-2 text-sm leading-6 text-stone-500"
+                            />
                             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-stone-500">
                               <span>{mention.author_name ?? "Unknown source"}</span>
-                              <span>Keyword: {mention.tracked_keyword?.keyword ?? "Unlinked"}</span>
+                              <span>
+                                Keyword:{" "}
+                                <strong className="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-stone-700">
+                                  {mention.tracked_keyword?.keyword ?? "Unlinked"}
+                                </strong>
+                              </span>
                             </div>
                             <div className="mt-4 flex flex-col gap-3 border-t border-stone-200 pt-4 text-sm sm:flex-row sm:flex-wrap">
                               <button
@@ -4460,59 +4700,89 @@ export function IqxIntelligenceApp() {
                               </button>
                             </div>
                           </article>
-                        ))
-                      ) : (
-                        <div className="rounded-[1.5rem] border border-dashed border-stone-200 bg-stone-50/80 px-4 py-8 text-sm text-stone-500">
-                          No matched mentions yet. IQX will populate this stream as archived and newly captured content matches your active keywords.
+                          ))
+                        ) : (
+                          <div className="rounded-[1.5rem] border border-dashed border-stone-200 bg-stone-50/80 px-4 py-8 text-sm text-stone-500">
+                            No results match the current search. Clear or change the query to see matched mentions.
+                          </div>
+                        )}
+                      </div>
+                      {filteredMentions.length > 0 ? (
+                        <div className="mt-5 flex flex-col items-start justify-between gap-4 border-t border-stone-200 pt-5 sm:flex-row sm:items-center">
+                          <p className="text-sm text-stone-500">
+                            Page {safeMentionsPage} of {totalMentionsPages}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setMentionsPage((current) => Math.max(1, current - 1))}
+                              disabled={safeMentionsPage === 1}
+                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Previous
+                            </button>
+                            {Array.from({ length: totalMentionsPages }, (_, index) => index + 1)
+                              .slice(
+                                Math.max(0, safeMentionsPage - 2),
+                                Math.max(4, safeMentionsPage + 1),
+                              )
+                              .map((page) => (
+                                <button
+                                  key={page}
+                                  type="button"
+                                  onClick={() => setMentionsPage(page)}
+                                  className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${page === safeMentionsPage
+                                    ? "bg-stone-950 text-stone-50"
+                                    : "border border-stone-300 text-stone-700 hover:border-stone-500"
+                                    }`}
+                                >
+                                  {page}
+                                </button>
+                              ))}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMentionsPage((current) => Math.min(totalMentionsPages, current + 1))
+                              }
+                              disabled={safeMentionsPage === totalMentionsPages}
+                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Next
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    {filteredMentions.length > 0 ? (
-                      <div className="mt-5 flex flex-col items-start justify-between gap-4 border-t border-stone-200 pt-5 sm:flex-row sm:items-center">
-                        <p className="text-sm text-stone-500">
-                          Page {safeMentionsPage} of {totalMentionsPages}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setMentionsPage((current) => Math.max(1, current - 1))}
-                            disabled={safeMentionsPage === 1}
-                            className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      ) : null}
+                    </article>
+                  ) : (
+                    <article className="rounded-[2rem] border border-amber-200 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.94))] p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-6 w-6"
+                            aria-hidden="true"
                           >
-                            Previous
-                          </button>
-                          {Array.from({ length: totalMentionsPages }, (_, index) => index + 1)
-                            .slice(
-                              Math.max(0, safeMentionsPage - 2),
-                              Math.max(4, safeMentionsPage + 1),
-                            )
-                            .map((page) => (
-                              <button
-                                key={page}
-                                type="button"
-                                onClick={() => setMentionsPage(page)}
-                                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${page === safeMentionsPage
-                                  ? "bg-stone-950 text-stone-50"
-                                  : "border border-stone-300 text-stone-700 hover:border-stone-500"
-                                  }`}
-                              >
-                                {page}
-                              </button>
-                            ))}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setMentionsPage((current) => Math.min(totalMentionsPages, current + 1))
-                            }
-                            disabled={safeMentionsPage === totalMentionsPages}
-                            className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Next
-                          </button>
+                            <path d="M12 9v4" />
+                            <path d="M12 17h.01" />
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-sm tracking-[0.18em] text-amber-700 uppercase">
+                            No matched mentions
+                          </p>
+                          <p className="mt-2 text-base font-medium leading-7 text-stone-700">
+                            Sorry, No matched mentions yet. IQX will populate this stream as archived and newly captured content matches your active keywords.
+                          </p>
                         </div>
                       </div>
-                    ) : null}
-                  </article>
+                    </article>
+                  )}
 
                 </div>
               ) : null}
@@ -5217,7 +5487,7 @@ export function IqxIntelligenceApp() {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+                  <div className="mt-5 space-y-5">
                     <MentionReachChart
                       mentions={analysisMentions}
                       windowDays={analysisWindowDays}
@@ -5228,7 +5498,7 @@ export function IqxIntelligenceApp() {
                       <p className="text-sm tracking-[0.18em] text-stone-500 uppercase">
                         Overview
                       </p>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         {analysisOverviewCards.map((card) => (
                           <article
                             key={card.label}
@@ -5284,9 +5554,11 @@ export function IqxIntelligenceApp() {
                                 </div>
                                 <ResultToneBadge tone={mention.sentiment} />
                               </div>
-                              <p className="mt-3 text-sm leading-6 text-stone-600">
-                                {mention.body.length > 180 ? `${mention.body.slice(0, 177)}...` : mention.body}
-                              </p>
+                              <MentionExcerpt
+                                body={mention.body}
+                                keyword={mention.tracked_keyword?.keyword}
+                                className="mt-3 text-sm leading-6 text-stone-600"
+                              />
                             </article>
                           ))
                         ) : (
